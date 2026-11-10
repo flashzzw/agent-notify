@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -12,7 +13,7 @@ import (
 func TestDesktopNotificationEncodesUntrustedTextWithoutClickAction(t *testing.T) {
 	var script string
 	sender := NewWindowsSender(func(_ context.Context, name string, args ...string) error {
-		if name != "powershell.exe" && !strings.HasSuffix(name, "/powershell.exe") {
+		if !strings.EqualFold(filepath.Base(name), "powershell.exe") {
 			t.Fatalf("unexpected runner: %s", name)
 		}
 		raw, err := base64.StdEncoding.DecodeString(args[len(args)-1])
