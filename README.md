@@ -11,6 +11,10 @@
 
 This edition supports **Claude Code, Codex, and Senpi-based Oh My OpenCode (OMO)** on **Windows and WSL**. Each agent can independently enable desktop notifications, WeCom, or both. The command-line wizard currently uses Chinese labels.
 
+WeCom notifications use plain text for compatibility with WeChat. Messages include a title, body, timestamp and available project, workspace and session details. Long content is truncated at UTF-8 character boundaries to keep the entire message within 2048 bytes.
+
+Windows notification headers have distinct names and small icons: `Codex Notify`, `Claude Notify`, and `OMO Notify`. Notification bodies contain text without a large logo. Icons are embedded in the executable and cached on Windows at first use, including when sending from WSL, with no downloads required.
+
 ## Install
 
 Download an archive from [Releases](https://github.com/flashzzw/agent-notify/releases/latest). Most Intel/AMD computers use `amd64`; ARM devices use `arm64`.

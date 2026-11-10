@@ -11,6 +11,10 @@
 
 本版本面向 **Windows 和 WSL**，接入 **Claude Code、Codex、基于 Senpi 的新版 Oh My OpenCode（OMO）**。每个 Agent 可以单独配置系统通知、企业微信，或同时启用两个渠道。交互向导目前使用中文。
 
+企业微信通知使用纯文本，兼容微信端显示；内容包含标题、正文、时间及可用的项目、工作目录和会话信息。超长内容按 UTF-8 字节安全截断，整条消息不超过 2048 字节。
+
+Windows 通知顶部按 Agent 显示独立名称与小图标：`Codex Notify`、`Claude Notify`、`OMO Notify`，正文不显示大图标。图标内置于程序，首次通知时缓存到 Windows 本地目录，Windows 原生和 WSL 均可离线使用。
+
 ## 下载安装
 
 打开 [Releases](https://github.com/flashzzw/agent-notify/releases/latest)，按 Agent 所在环境下载。普通 Intel/AMD 电脑选择 `amd64`，ARM 设备选择 `arm64`。

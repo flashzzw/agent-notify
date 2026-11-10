@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestWechatWorkSenderName(t *testing.T) {
@@ -58,16 +60,16 @@ func TestWechatWorkSenderSendSuccess(t *testing.T) {
 		t.Fatalf("Send() error = %v", err)
 	}
 
-	if gotPayload["msgtype"] != "markdown" {
-		t.Errorf("msgtype = %v, want markdown", gotPayload["msgtype"])
+	if gotPayload["msgtype"] != "text" {
+		t.Errorf("msgtype = %v, want text", gotPayload["msgtype"])
 	}
-	md, ok := gotPayload["markdown"].(map[string]any)
+	md, ok := gotPayload["text"].(map[string]any)
 	if !ok {
-		t.Fatal("markdown field missing or wrong type")
+		t.Fatal("text field missing or wrong type")
 	}
 	content, ok := md["content"].(string)
 	if !ok || content == "" {
-		t.Fatal("markdown.content is missing or empty")
+		t.Fatal("text.content is missing or empty")
 	}
 	if !strings.Contains(content, "Claude Code 等待授权") {
 		t.Errorf("content should contain message title, got: %s", content)
@@ -151,59 +153,80 @@ func TestWechatWorkErrorsDoNotExposeCredentials(t *testing.T) {
 	}
 }
 
-func TestBuildWechatMarkdownContainsBody(t *testing.T) {
-	s := NewWechatWorkSender("https://example.com")
-	msg := Message{
-		Agent:     "claude",
-		Event:     "run_completed",
-		Title:     "运行完成",
-		Body:      "任务执行成功",
-		Workspace: "/workspace",
+func captureWechatText(t *testing.T, msg Message) string {
+	t.Helper()
+	var payload struct {
+		Type string `json:"msgtype"`
+		Text struct {
+			Content string `json:"content"`
+		} `json:"text"`
 	}
-	content := s.buildMarkdown(msg)
-	if !strings.Contains(content, "任务执行成功") {
-		t.Errorf("markdown should contain body, got: %s", content)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		_, _ = w.Write([]byte(`{"errcode":0}`))
+	}))
+	defer srv.Close()
+	if err := NewWechatWorkSender(srv.URL).Send(context.Background(), msg); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(content, "运行完成") {
-		t.Errorf("markdown should contain eventName, got: %s", content)
+	if payload.Type != "text" {
+		t.Fatalf("msgtype = %q, want text for WeChat compatibility", payload.Type)
 	}
-	if !strings.Contains(content, "/workspace") {
-		t.Errorf("markdown should contain workspace, got: %s", content)
-	}
+	return payload.Text.Content
 }
 
-func TestBuildWechatMarkdownOmitsWorkspaceForCodex(t *testing.T) {
-	s := NewWechatWorkSender("https://example.com")
-	msg := Message{
-		Agent:     "codex",
-		Event:     "run_completed",
-		Title:     "运行完成",
-		Body:      "done",
-		Workspace: "/tmp/project",
-	}
-	content := s.buildMarkdown(msg)
-	if strings.Contains(content, "/tmp/project") {
-		t.Errorf("markdown should omit workspace for codex, got: %s", content)
-	}
-}
-
-func TestBuildWechatMarkdownEventEmojis(t *testing.T) {
-	s := NewWechatWorkSender("https://example.com")
-	cases := []struct {
-		event string
-		emoji string
+func TestWechatWorkTextRestoresLegacyLayout(t *testing.T) {
+	for _, tc := range []struct {
+		agent, event, title, wantTitle, workspace string
 	}{
-		{"permission_required", "🔐"},
-		{"input_required", "⌨️"},
-		{"run_completed", "✅"},
-		{"run_failed", "❌"},
-		{"unknown_event", "🔔"},
+		{"codex", "run_completed", "Codex 运行完成", "✅ Codex · 运行完成", "/tmp/项目"},
+		{"claude_code", "permission_required", "Claude Code 等待授权", "🔐 Claude Code · 等待授权", `C:\工作\项目`},
+		{"omo", "input_required", "Oh My OpenCode 等待输入", "⌨️ Oh My OpenCode · 等待输入", "/tmp/项目"},
+		{"claude", "run_failed", "部署失败", "❌ 部署失败", "/tmp/项目"},
+	} {
+		t.Run(tc.agent, func(t *testing.T) {
+			content := captureWechatText(t, Message{Agent: tc.agent, Event: tc.event, Title: tc.title,
+				Body: "第一行\n第二行 <原文>", Workspace: tc.workspace, SessionID: "session-123"})
+			content = regexp.MustCompile(`时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`).ReplaceAllString(content, "时间：<time>")
+			want := tc.wantTitle + "\n消息内容：\n第一行\n第二行 <原文>\n时间：<time>\n项目：项目\n工作目录：" + tc.workspace + "\n会话：session-123"
+			if content != want {
+				t.Fatalf("content = %q, want %q", content, want)
+			}
+		})
 	}
-	for _, tc := range cases {
-		msg := Message{Event: tc.event, Title: "标题", Body: "内容"}
-		content := s.buildMarkdown(msg)
-		if !strings.Contains(content, tc.emoji) {
-			t.Errorf("event %q: expected emoji %q in content: %s", tc.event, tc.emoji, content)
+}
+
+func TestWechatWorkTextLimitsUTF8BytesAndKeepsMetadata(t *testing.T) {
+	for _, oversizedMetadata := range []bool{false, true} {
+		msg := Message{Title: "标题", Body: strings.Repeat("中文🙂", 1000), Workspace: "/tmp/项目", SessionID: "session-123"}
+		if oversizedMetadata {
+			msg.Title = strings.Repeat("标题", 1000)
+			msg.Workspace = "/tmp/" + strings.Repeat("项目", 1000)
+			msg.SessionID = strings.Repeat("会话", 1000)
+		}
+		content := captureWechatText(t, msg)
+		if len(content) > 2048 || !utf8.ValidString(content) {
+			t.Fatalf("content must fit 2048 UTF-8 bytes, got %d bytes, valid=%t", len(content), utf8.ValidString(content))
+		}
+		if !strings.Contains(content, "…\n时间：") || !strings.Contains(content, "\n项目：") || !strings.Contains(content, "\n工作目录：") || !strings.Contains(content, "\n会话：") {
+			t.Fatalf("truncated message lost metadata: %q", content)
+		}
+		if !oversizedMetadata && !strings.HasSuffix(content, "\n项目：项目\n工作目录：/tmp/项目\n会话：session-123") {
+			t.Fatal("ordinary metadata was truncated")
+		}
+	}
+}
+
+func TestWechatWorkTextPreservesCustomTitleAndOmitsMissingMetadata(t *testing.T) {
+	content := captureWechatText(t, Message{Title: "自定义标题", Body: "内容"})
+	if !strings.HasPrefix(content, "🔔 自定义标题\n消息内容：\n内容\n时间：") {
+		t.Fatalf("unexpected content: %q", content)
+	}
+	for _, field := range []string{"项目：", "工作目录：", "会话："} {
+		if strings.Contains(content, field) {
+			t.Errorf("empty metadata %q should be omitted", field)
 		}
 	}
 }

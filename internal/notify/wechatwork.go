@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // WechatWorkSender sends notifications via WeChat Work (企业微信) group bot webhook.
@@ -26,16 +29,16 @@ func NewWechatWorkSender(webhookURL string) *WechatWorkSender {
 
 func (s *WechatWorkSender) Name() string { return "wechat-work" }
 
-// Send sends a notification message via WeChat Work webhook using the markdown message type.
+// Send uses plain text so notifications also display in WeChat.
 func (s *WechatWorkSender) Send(ctx context.Context, msg Message) error {
 	if s.webhookURL == "" {
 		return fmt.Errorf("wechat-work: webhook_url is empty")
 	}
 
-	content := s.buildMarkdown(msg)
+	content := s.buildText(msg)
 	payload := map[string]any{
-		"msgtype": "markdown",
-		"markdown": map[string]any{
+		"msgtype": "text",
+		"text": map[string]any{
 			"content": content,
 		},
 	}
@@ -81,27 +84,38 @@ func (s *WechatWorkSender) Send(ctx context.Context, msg Message) error {
 	return nil
 }
 
-// buildMarkdown constructs the markdown content for a WeChat Work message.
-func (s *WechatWorkSender) buildMarkdown(msg Message) string {
-	emoji := eventEmoji(msg.Event)
-	eventName := eventDisplayName(msg.Event)
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-
-	footerText := "🤖 Agent Notify"
-	if msg.Agent == "codex" {
-		footerText = "🤖 Codex Agent Notify"
+// buildText preserves the original notifier's layout and reserves space for
+// metadata within WeCom's 2048-byte UTF-8 text limit.
+func (s *WechatWorkSender) buildText(msg Message) string {
+	title := msg.Title
+	if title == FormatTitle(msg.Agent, msg.Event) {
+		title = appDisplayName(msg.Agent) + " · " + eventDisplayName(msg.Event)
 	}
-
-	content := fmt.Sprintf("## %s %s\n\n", emoji, msg.Title)
-	content += fmt.Sprintf(">**事件类型**：%s\n", eventName)
-	content += fmt.Sprintf(">**时间**：%s\n", timestamp)
-	content += fmt.Sprintf(">**消息内容**：%s\n", msg.Body)
-	if msg.Workspace != "" && msg.Agent != "codex" {
-		content += fmt.Sprintf(">**工作目录**：`%s`\n", msg.Workspace)
+	prefix := eventEmoji(msg.Event) + " " + truncateWechatText(title, 240) + "\n消息内容：\n"
+	metadata := []string{"时间：" + time.Now().Format("2006-01-02 15:04:05")}
+	if workspace := strings.TrimSpace(msg.Workspace); workspace != "" {
+		project := path.Base(strings.ReplaceAll(workspace, `\`, "/"))
+		metadata = append(metadata, "项目："+truncateWechatText(project, 160), "工作目录："+truncateWechatText(workspace, 400))
 	}
-	content += fmt.Sprintf("\n<font color=\"comment\">%s</font>", footerText)
+	if msg.SessionID != "" {
+		metadata = append(metadata, "会话："+truncateWechatText(msg.SessionID, 80))
+	}
+	suffix := "\n" + strings.Join(metadata, "\n")
+	return prefix + truncateWechatText(msg.Body, 2048-len(prefix)-len(suffix)) + suffix
+}
 
-	return content
+// Byte limits must not split a Chinese character or emoji. All callers reserve
+// at least len("…") bytes, including when metadata reaches its individual caps.
+func truncateWechatText(text string, maxBytes int) string {
+	text = strings.ToValidUTF8(text, "�")
+	if len(text) <= maxBytes {
+		return text
+	}
+	end := maxBytes - len("…")
+	for end > 0 && !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[:end] + "…"
 }
 
 func eventEmoji(event string) string {

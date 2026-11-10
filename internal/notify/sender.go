@@ -3,16 +3,18 @@ package notify
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 )
 
-type Runner func(context.Context, string, ...string) error
+type Runner func(context.Context, string, io.Reader, ...string) error
 
-func DefaultRunner(ctx context.Context, name string, args ...string) error {
+func DefaultRunner(ctx context.Context, name string, stdin io.Reader, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = stdin
 	prepareCommand(cmd)
 	// PowerShell may print payloads on failure; report status only.
 	return cmd.Run()

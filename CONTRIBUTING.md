@@ -17,6 +17,8 @@ Format changed Go files with `gofmt`. Use `make package VERSION=v0.1.0` (or `pyt
 
 Tests use temporary configuration and local HTTP servers. Do not send test messages to real groups or modify your live agent hooks for automated checks. On a real Windows/WSL desktop, manually verify `test system` when changing toast behavior; cross-compilation and mocked PowerShell tests cannot prove the toast appeared.
 
+To exercise first delivery and agent branding on a WSL desktop, run `AGENT_NOTIFY_TEST_WINDOWS=1 go test ./internal/notify -run 'TestDesktop(FirstNotification|AgentBranding)OnWindows' -count=1 -v`. In Windows PowerShell, set `$env:AGENT_NOTIFY_TEST_WINDOWS = '1'` before the same `go test` command. These opt-in checks submit local toasts with fresh app identities, verify registered names and icon files (including paths with Unicode and special characters), then remove their temporary notification history, registry entries and assets. Other test runs skip them.
+
 ## Changes
 
 - Preserve unrelated agent settings during installation and uninstall.

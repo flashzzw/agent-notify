@@ -29,6 +29,22 @@ agent-notify install --agent claude --channels system --events permission_requir
 
 `--channels` 和 `--events` 会替换对应 Agent 当前的选择；省略时沿用现有配置。Defaults for a new configuration subscribe to all events supported by that agent; channels must be selected explicitly.
 
+企业微信使用 `msgtype: text` 纯文本消息，微信端可直接显示。示例：
+
+```text
+✅ Codex · 运行完成
+消息内容：
+任务已完成，请查看结果
+时间：2026-11-10 14:30:00
+项目：agent-notify
+工作目录：/home/user/agent-notify
+会话：example-session
+```
+
+缺失的项目、工作目录或会话字段会省略；消息总长度限制为 2048 UTF-8 字节，超长正文保留开头并以 `…` 结束。WeCom uses plain text, omits unavailable metadata, and truncates long content without splitting a Unicode character.
+
+Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，顶部来源名称旁显示对应小图标，正文不显示大 logo。OMO 图标由 `assets/omo-icon-light.svg` 转为 PNG 后内置。各自使用独立的通知身份，可在 Windows「设置 → 系统 → 通知」中分别控制。图标内置于程序，首次使用时写入 `%LOCALAPPDATA%\AgentNotify\icons`；WSL 也写入此 Windows 本地目录，无需保留旧版工具或单独安装图片。
+
 ## 自定义目录 / Custom paths
 
 | Setting | Meaning |
@@ -53,9 +69,9 @@ Extract updates into the existing installation directory, rerun setup and reload
 agent-notify uninstall --agent all
 ```
 
-卸载只移除 Agent Notify 管理的接入并关闭通知，保留其他 hooks、本地通知配置、备份、日志及 Codex 通用 hooks 开关。Windows Toast 首次发送时创建的当前用户 `AgentNotify.Desktop` 注册项也保留。确认不再使用后，可自行删除程序目录及私有配置目录。
+卸载只移除 Agent Notify 管理的接入并关闭通知，保留其他 hooks、本地通知配置、备份、日志及 Codex 通用 hooks 开关。Windows Toast 首次发送时创建的当前用户 `AgentNotify.Desktop`、`AgentNotify.Desktop.Codex`、`AgentNotify.Desktop.Claude`、`AgentNotify.Desktop.OMO` 注册项及 `%LOCALAPPDATA%\AgentNotify\icons` 缓存也保留。确认不再使用后，可自行删除程序目录及私有配置目录。
 
-Uninstall preserves unrelated hooks, local configuration/backups/logs, the shared Codex hooks feature flag and the per-user Windows `AgentNotify.Desktop` registration created when sending a toast.
+Uninstall preserves unrelated hooks, local configuration/backups/logs, the shared Codex hooks feature flag, the per-user Windows `AgentNotify.Desktop` registrations (including the `.Codex`, `.Claude` and `.OMO` identities), and cached icons created when sending a toast.
 
 ## 排错 / Troubleshooting
 

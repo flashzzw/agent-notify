@@ -32,7 +32,7 @@ func TestInstallHookSendsOnceAndUninstallPreservesUserSettings(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload["msgtype"] != "markdown" {
+		if payload["msgtype"] != "text" {
 			t.Errorf("unexpected payload: %#v", payload)
 		}
 		received.Add(1)
