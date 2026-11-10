@@ -115,3 +115,29 @@ func TestConfigShowRedactsWebhookAndHookFailureIsSilent(t *testing.T) {
 		t.Fatal("failure was not observable")
 	}
 }
+
+func TestConfigShowRedactsNestedLegacySecrets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := `legacy_keys:
+  webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=map-secret
+token_history:
+  - array-secret
+preferences:
+  theme: visible-theme
+`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, path, "", "config", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"map-secret", "array-secret"} {
+		if strings.Contains(out, secret) {
+			t.Fatal("config show exposed a nested credential")
+		}
+	}
+	if !strings.Contains(out, "visible-theme") {
+		t.Fatal("config show hid a non-sensitive setting")
+	}
+}

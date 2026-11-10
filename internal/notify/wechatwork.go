@@ -47,7 +47,7 @@ func (s *WechatWorkSender) Send(ctx context.Context, msg Message) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.webhookURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("wechat-work: create request: %w", err)
+		return fmt.Errorf("wechat-work: invalid webhook request")
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
@@ -60,23 +60,22 @@ func (s *WechatWorkSender) Send(ctx context.Context, msg Message) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("wechat-work: unexpected status %d: %s", resp.StatusCode, string(respBody))
+		// Response text can reflect the credential-bearing request URL.
+		return fmt.Errorf("wechat-work: unexpected status %d", resp.StatusCode)
 	}
 
 	// Parse response to check errcode
 	var result struct {
-		ErrCode *int   `json:"errcode"`
-		ErrMsg  string `json:"errmsg"`
+		ErrCode *int `json:"errcode"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&result); err != nil {
 		return fmt.Errorf("wechat-work: invalid API response")
 	}
 	if result.ErrCode == nil {
 		return fmt.Errorf("wechat-work: invalid API response")
 	}
 	if *result.ErrCode != 0 {
-		return fmt.Errorf("wechat-work: api error code=%d msg=%s", *result.ErrCode, result.ErrMsg)
+		return fmt.Errorf("wechat-work: api error code=%d", *result.ErrCode)
 	}
 
 	return nil

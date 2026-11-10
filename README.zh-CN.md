@@ -25,7 +25,7 @@
 在解压目录中打开 Windows PowerShell：
 
 ```powershell
-.gent-notify.exe
+.\agent-notify.exe
 ```
 
 WSL 用户在解压目录中运行：
@@ -35,7 +35,7 @@ chmod +x agent-notify
 ./agent-notify
 ```
 
-按向导选择 Agent、安装范围、渠道和事件。一般选择「当前用户」，多个 Agent 分别配置。将解压目录加入 `PATH` 后，可以直接使用下文的 `agent-notify` 命令；否则使用 `./agent-notify` 或 `.gent-notify.exe`。
+按向导选择 Agent、安装范围、渠道和事件。一般选择「当前用户」，多个 Agent 分别配置。将解压目录加入 `PATH` 后，可以直接使用下文的 `agent-notify` 命令；否则使用 `./agent-notify` 或 `.\agent-notify.exe`。
 
 WSL 系统通知需要启用 Windows 互操作，并能够调用 `powershell.exe`。本版本不提供普通 Linux 桌面通知。发行二进制暂未签名，下载完整性可用随附的 `SHA256SUMS` 校验。
 

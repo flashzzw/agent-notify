@@ -238,6 +238,13 @@ func Save(path string, c Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
+	// The generic writer inherits source permissions. Tighten both existing
+	// files before copying credentials, including backups left by older versions.
+	for _, privatePath := range []string{path, path + common.BackupSuffix} {
+		if err := os.Chmod(privatePath, 0600); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("protect configuration permissions: %w", err)
+		}
+	}
 	if err := common.WriteFileAtomicWithBackup(path, data, 0600); err != nil {
 		return err
 	}
@@ -261,9 +268,8 @@ func (c Config) Redacted() ([]byte, error) {
 				key, val := n.Content[i], n.Content[i+1]
 				k := strings.ToLower(key.Value)
 				if strings.Contains(k, "url") || strings.Contains(k, "token") || strings.Contains(k, "secret") || strings.Contains(k, "key") {
-					if val.Kind == yaml.ScalarNode && val.Value != "" {
-						val.Value = "[已隐藏]"
-						val.Tag = "!!str"
+					if val.Kind != yaml.ScalarNode || val.Value != "" {
+						*val = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "[已隐藏]"}
 					}
 				} else {
 					walk(val)

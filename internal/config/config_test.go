@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,43 @@ func TestLegacyOpenCodeMigratesToOMOWithoutClickToFocus(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "omo:") {
 		t.Fatal("OMO identity not persisted")
+	}
+}
+
+func TestSaveRestrictsExistingConfigurationAndBackupPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file modes do not represent Windows ACLs")
+	}
+	for _, existingBackup := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new backup", true: "existing backup"}[existingBackup], func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			backup := path + ".agent-notify.bak"
+			original := []byte("legacy_token: test-credential\n")
+			if err := os.WriteFile(path, original, 0644); err != nil {
+				t.Fatal(err)
+			}
+			if existingBackup {
+				if err := os.WriteFile(backup, original, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := Save(path, Default()); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []string{path, backup} {
+				info, err := os.Stat(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != 0600 {
+					t.Errorf("%s permissions = %o, want 600", filepath.Base(file), info.Mode().Perm())
+				}
+			}
+			data, err := os.ReadFile(backup)
+			if err != nil || string(data) != string(original) {
+				t.Fatal("original configuration backup was not preserved")
+			}
+		})
 	}
 }
 

@@ -132,6 +132,25 @@ func TestWechatWorkRejectsMalformedSuccessAndRedactsTransportURL(t *testing.T) {
 	}
 }
 
+func TestWechatWorkErrorsDoNotExposeCredentials(t *testing.T) {
+	const secret = "reflected-test-credential"
+	for _, status := range []int{http.StatusBadRequest, http.StatusOK} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"errcode": 93000, "errmsg": "invalid URL " + r.URL.String()})
+		}))
+		err := NewWechatWorkSender(srv.URL+"?key="+secret).Send(context.Background(), Message{})
+		srv.Close()
+		if err == nil || strings.Contains(err.Error(), secret) {
+			t.Errorf("status %d: missing safe error", status)
+		}
+	}
+	err := NewWechatWorkSender("https://example.invalid/"+secret+"%zz").Send(context.Background(), Message{})
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Error("invalid URL: missing safe error")
+	}
+}
+
 func TestBuildWechatMarkdownContainsBody(t *testing.T) {
 	s := NewWechatWorkSender("https://example.com")
 	msg := Message{

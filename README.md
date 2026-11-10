@@ -25,7 +25,7 @@ Extract to a permanent directory. The archive contains `agent-notify.exe` (Windo
 Windows PowerShell, from the extracted directory:
 
 ```powershell
-.gent-notify.exe
+.\agent-notify.exe
 ```
 
 WSL, from the extracted directory:
@@ -35,7 +35,7 @@ chmod +x agent-notify
 ./agent-notify
 ```
 
-The wizard selects an agent, installation scope, channels and events. Choose **当前用户** (current user) for the usual setup. Repeat for each agent. Add the directory to `PATH` to use the commands below from anywhere; otherwise use `./agent-notify` or `.gent-notify.exe`.
+The wizard selects an agent, installation scope, channels and events. Choose **当前用户** (current user) for the usual setup. Repeat for each agent. Add the directory to `PATH` to use the commands below from anywhere; otherwise use `./agent-notify` or `.\agent-notify.exe`.
 
 WSL desktop notifications require Windows interoperability and access to `powershell.exe`. Plain Linux has no desktop channel in this edition. Release binaries are unsigned; `SHA256SUMS` is provided for download integrity checks.
 
