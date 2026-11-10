@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 // lockTimeout 是抢跨进程文件锁的等待上限。hook 进程绝不能阻塞宿主 agent,

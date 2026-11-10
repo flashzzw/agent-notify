@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hellolib/agent-notify/internal/state"
+	"github.com/flashzzw/agent-notify/internal/state"
 )
 
 type fakeSender struct {

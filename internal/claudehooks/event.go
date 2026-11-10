@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hellolib/agent-notify/internal/common"
-	"github.com/hellolib/agent-notify/internal/notify"
+	"github.com/flashzzw/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/notify"
 )
 
 type payload struct {
@@ -29,7 +29,7 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 
 	switch p.HookEventName {
 	case "SessionStart":
-		// 仅供 Linux 点击聚焦捕获窗口用；Dispatch 会拦截、不发通知。
+		// 兼容旧版 SessionStart 事件；Dispatch 会忽略它，不产生通知。
 		return notify.Message{
 			Agent:     "claude_code",
 			Event:     "session_start",

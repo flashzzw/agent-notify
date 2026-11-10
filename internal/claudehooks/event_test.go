@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hellolib/agent-notify/internal/common"
-	"github.com/hellolib/agent-notify/internal/notify"
+	"github.com/flashzzw/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/notify"
 )
 
 func TestParsePermissionRequest(t *testing.T) {

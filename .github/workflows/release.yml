@@ -2,145 +2,54 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
     strategy:
+      fail-fast: false
       matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
-
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
-          VERSION: ${{ github.ref_name }}
-        run: |
-          ext=""
-          if [ "$GOOS" = "windows" ]; then
-            ext=".exe"
-          fi
-          binary_name="agent-notify-${VERSION}-${GOOS}-${GOARCH}${ext}"
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/hellolib/agent-notify/internal/cli.Version=${VERSION}" -o "${binary_name}" ./cmd/agent-notify
-
-      - name: Install UPX
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y upx-ucl
-
-      - name: Compress binary with UPX
-        if: matrix.goos != 'darwin' && !(matrix.goos == 'windows' && matrix.goarch == 'arm64')
-        run: |
-          ext=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            ext=".exe"
-          fi
-          binary_name="agent-notify-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
-          upx --best --lzma "${binary_name}"
-
-      - name: Create archive
-        run: |
-          ext=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            ext=".exe"
-          fi
-          binary_name="agent-notify-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
-          archive_name="agent-notify-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
-          # 将 per-agent logo 资源塞进所有平台 archive（docs/agent-logo-plan.md）：
-          #   agentlogo/<agent>.png  运行时解压到 ~/.agent-notify/agentlogo/
-          #   agent-notify.png       运行时解压到 ~/.agent-notify/（fallback 图标）
-          # 只取 *.png，顺便挡掉 macOS 工作区可能残留的 .DS_Store。
-          mkdir -p agentlogo
-          cp assist/logo/agentlogo/*.png agentlogo/
-          cp assist/agent-notify.png agent-notify.png
-          # macOS: 将预置的 terminal-notifier.app 打包进压缩包，用户下载 agent-notify 时一并获得
-          if [ "${{ matrix.goos }}" = "darwin" ]; then
-            unzip -o -q thirdparty/helper/mac/terminal-notifier-2.0.0.zip -d .
-            cp "thirdparty/helper/mac/mac-focus-helper-${{ matrix.goarch }}" mac-focus-helper
-            tar -czvf "${archive_name}" "${binary_name}" terminal-notifier.app mac-focus-helper agentlogo agent-notify.png
-          elif [ "${{ matrix.goos }}" = "windows" ]; then
-            cp "thirdparty/helper/windows/toast-focus-helper-${{ matrix.goarch }}.exe" toast-focus-helper.exe
-            tar -czvf "${archive_name}" "${binary_name}" toast-focus-helper.exe agentlogo agent-notify.png
-          else
-            tar -czvf "${archive_name}" "${binary_name}" agentlogo agent-notify.png
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-notify-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: "*.tar.gz"
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: List artifacts
-        run: ls -la artifacts/
-
-      # 生成校验和清单,供 npx 启动器在安装前验证下载完整性(issue #37)。
-      # 文件名与 tar.gz 同目录相对,便于 `sha256sum -c SHA256SUMS` 直接复核。
-      - name: Generate SHA256SUMS
-        working-directory: artifacts
-        run: |
-          sha256sum *.tar.gz > SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/SHA256SUMS
-          generate_release_notes: true
-
-  # npm 必须在 Release 产物上传完成之后才发布(issue #36)。
-  # 过去由维护者本地 `make release` 在 push tag 后立刻 npm publish,
-  # 而 6 平台构建还要数分钟——窗口期内首次安装的用户下载 404 直接硬失败。
-  npm-publish:
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # npm provenance 需要
-    steps:
-      - uses: actions/checkout@v4
-
+          go-version-file: go.mod
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: '22'
+      - run: go test ./...
+      - run: go vet ./...
 
-      - name: Publish to npm
-        working-directory: npx
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build archives
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ github.ref_name }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::NPM_TOKEN secret is not set — add it under Settings → Secrets and variables → Actions, then re-run this job."
-            exit 1
-          fi
-          npm_version="${VERSION#v}"
-          npm version "$npm_version" --no-git-tag-version --allow-same-version
-          npm publish --access public --provenance
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: python3 scripts/package.py --version "$RELEASE_VERSION"
+      - name: Verify checksums
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/SHA256SUMS

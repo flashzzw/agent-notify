@@ -7,7 +7,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
-	"github.com/hellolib/agent-notify/internal/i18n"
+	"github.com/flashzzw/agent-notify/internal/i18n"
 )
 
 // ErrCancelled 表示用户按 Ctrl+C 取消操作
@@ -154,6 +154,17 @@ func (p *surveyPrompter) Input(message, defaultValue string) (string, error) {
 		Default: defaultValue,
 	}
 	if err := survey.AskOne(prompt, &answer, p.askOpts()...); err != nil {
+		if errors.Is(err, terminal.InterruptErr) {
+			return "", ErrCancelled
+		}
+		return "", err
+	}
+	return answer, nil
+}
+
+func (p *surveyPrompter) Password(message string) (string, error) {
+	var answer string
+	if err := survey.AskOne(&survey.Password{Message: message}, &answer, p.askOpts()...); err != nil {
 		if errors.Is(err, terminal.InterruptErr) {
 			return "", ErrCancelled
 		}

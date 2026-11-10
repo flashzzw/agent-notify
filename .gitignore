@@ -4,6 +4,10 @@
 .worktrees/
 .claude/
 .agent/
+.codex/
+.senpi/
+.scratch/
+.agent-notify/
 node_modules/
 docs/superpowers
 dist/
@@ -11,9 +15,12 @@ coverage/
 
 .env
 .env.*
+!.env.example
+*.log
+*.test
+coverage.out
 
 bin/
-main
-agent-notify
-
-npx/README.md
+/main
+/agent-notify
+/agent-notify.exe

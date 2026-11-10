@@ -1,27 +1,58 @@
 package notify
 
-import "runtime"
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+)
 
-// NewSystemSender returns the appropriate system notification sender for the current platform.
-// - darwin: uses macOS notifications (osascript/terminal-notifier)
-// - linux: uses notify-send
-// - windows: uses Windows Runtime toast notifications
-// - other: returns an explicit unsupported sender
-//
-// clickToFocus 控制点击通知是否激活宿主应用（macOS/Linux/Windows 生效）。
-// focusPrecision 控制激活宿主应用时的聚焦精度（"app" | "window"），目前仅 macOS 采纳，
-// linux/windows 暂忽略，留待后续实现。
-// focusDebug 控制点击聚焦探针日志开关，目前仅 windows 采纳（内嵌 logpath 到 toast URI 并记录 send 诊断），
-// macOS/linux 暂忽略。
-func NewSystemSender(run Runner, clickToFocus bool, focusPrecision string, focusDebug bool) Sender {
-	switch runtime.GOOS {
-	case "darwin":
-		return NewMacOSSender(run, clickToFocus, focusPrecision)
-	case "linux":
-		return NewLinuxSender(run, clickToFocus)
-	case "windows":
-		return NewWindowsSender(run, clickToFocus, focusDebug)
-	default:
-		return NewUnsupportedSender(runtime.GOOS)
+type Runner func(context.Context, string, ...string) error
+
+func DefaultRunner(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	prepareCommand(cmd)
+	// PowerShell may print payloads on failure; report status only.
+	return cmd.Run()
+}
+func IsWSL() bool {
+	if runtime.GOOS != "linux" {
+		return false
 	}
+	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
+		return true
+	}
+	data, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+	return strings.Contains(strings.ToLower(string(data)), "microsoft")
+}
+func powershellPath() string {
+	if p, err := exec.LookPath("powershell.exe"); err == nil {
+		return p
+	}
+	if IsWSL() {
+		p := "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	return "powershell.exe"
+}
+
+// SystemStatus checks prerequisites without sending a notification.
+func SystemStatus() error {
+	if runtime.GOOS != "windows" && !IsWSL() {
+		return fmt.Errorf("系统通知仅支持 Windows 10/11 或 WSL")
+	}
+	if _, err := exec.LookPath(powershellPath()); err != nil {
+		return fmt.Errorf("未找到 powershell.exe；WSL 请启用 Windows 互操作和 Windows PATH")
+	}
+	return nil
+}
+func NewSystemSender(run Runner) Sender {
+	if runtime.GOOS == "windows" || IsWSL() {
+		return NewWindowsSender(run)
+	}
+	return NewUnsupportedSender(runtime.GOOS)
 }

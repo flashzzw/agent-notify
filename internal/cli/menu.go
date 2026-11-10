@@ -2,524 +2,194 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"github.com/flashzzw/agent-notify/internal/app"
+	"github.com/flashzzw/agent-notify/internal/config"
 	"os"
+	"strconv"
 	"strings"
-	"time"
-
-	"github.com/hellolib/agent-notify/internal/common"
-	"github.com/hellolib/agent-notify/internal/config"
-	"github.com/hellolib/agent-notify/internal/feishucli"
-	"github.com/hellolib/agent-notify/internal/i18n"
-	"github.com/hellolib/agent-notify/internal/state"
 )
 
-const banner = `
-╔════════════════════════════════════════════════════════════════╗
-║            █████╗  ██████╗ ███████╗███╗   ██╗████████╗         ║
-║           ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝         ║
-║           ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║            ║
-║           ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║            ║
-║           ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║            ║
-║           ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝            ║
-║                        Agent Notify                            ║
-║  Claude / Codex / ZCode / Grok / Droid / OpenCode / OMP        ║
-╚════════════════════════════════════════════════════════════════╝
-`
-
-func runMenu(ctx context.Context, streams Streams) error {
-	prompter, err := newPrompter(streams)
+func agentOptions() []PromptOption {
+	return []PromptOption{{Label: "Claude Code", Value: "claude"}, {Label: "Codex", Value: "codex"}, {Label: "Oh My OpenCode (OMO)", Value: "omo"}}
+}
+func runMenu(ctx context.Context, s Streams, path string) error {
+	p, err := newPrompter(s)
 	if err != nil {
 		return err
 	}
-
-	// 只在首次显示 banner
-	renderBanner(streams)
-
+	fmt.Fprintf(s.Stdout, "\nAgent Notify %s\nClaude Code · Codex · OMO\n企业微信 · Windows / WSL 通知\n\n", Version)
 	for {
-		choice, err := prompter.Select("", []PromptOption{
-			{Label: i18n.T("menu.agent_config"), Value: "init"},
-			{Label: i18n.T("menu.channel_config"), Value: "channels"},
-			{Label: i18n.T("menu.test"), Value: "test"},
-			{Label: i18n.T("menu.freeze"), Value: "freeze"},
-			{Label: i18n.T("menu.doctor"), Value: "doctor"},
-			{Label: i18n.T("menu.view_config"), Value: "view"},
-			{Label: i18n.T("menu.clean_config"), Value: "clean"},
-			{Label: i18n.T("menu.language"), Value: "language"},
-			{Label: i18n.T("menu.quit"), Value: "quit"},
-		}, "init")
+		choice, err := p.Select("请选择操作", []PromptOption{
+			{Label: "配置 Agent 和通知", Value: "setup"},
+			{Label: "测试通知", Value: "test"},
+			{Label: "查看配置", Value: "view"},
+			{Label: "诊断", Value: "doctor"},
+			{Label: "通知超时与去重", Value: "behavior"},
+			{Label: "启用 / 关闭 Agent 通知", Value: "toggle"},
+			{Label: "卸载 Agent 接入", Value: "uninstall"},
+			{Label: "退出", Value: "quit"},
+		}, "setup")
 		if err != nil {
-			if errors.Is(err, ErrCancelled) {
-				return nil // Ctrl+C 退出程序
-			}
 			return err
 		}
-
 		switch choice {
-		case "init":
-			if err := runInitFlow(ctx, streams, prompter, "", "", common.ResolveBinaryPath("")); err != nil {
-				if errors.Is(err, ErrCancelled) {
-					fmt.Fprintln(streams.Stdout) // 仅换行，不显示错误
-				} else {
-					fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.config_failed"), err)
-				}
-			} else {
-				fmt.Fprint(streams.Stdout, "\n"+i18n.T("msg.config_done")+"\n\n")
-			}
-		case "channels":
-			if err := runChannelsMenu(ctx, streams, prompter); err != nil {
-				if !errors.Is(err, ErrCancelled) {
-					fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.config_failed"), err)
-				}
-			}
-		case "test":
-			if err := runTestMenu(ctx, streams, prompter); err != nil {
-				if !errors.Is(err, ErrCancelled) {
-					fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.test_failed"), err)
-				}
-			}
-		case "freeze":
-			if err := runFreezeMenu(streams, prompter); err != nil {
-				if !errors.Is(err, ErrCancelled) {
-					fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("freeze.err_save"), err)
+		case "quit":
+			return nil
+		case "setup":
+			err = runSetup(s, path, p)
+		case "view":
+			var cfg config.Config
+			cfg, err = config.Load(path)
+			if err == nil {
+				var data []byte
+				data, err = cfg.Redacted()
+				if err == nil {
+					fmt.Fprintf(s.Stdout, "配置: %s\n%s\n", path, data)
 				}
 			}
 		case "doctor":
-			if err := runDoctor(streams); err != nil {
-				fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.doctor_failed"), err)
+			err = doctor(s, path)
+		case "test":
+			var id, ch string
+			id, err = p.Select("使用哪个 Agent 的配置", agentOptions(), "claude")
+			if err == nil {
+				ch, err = p.Select("测试哪个渠道", []PromptOption{{Label: "Windows 通知", Value: "system"}, {Label: "企业微信", Value: "wechat-work"}}, "system")
 			}
-		case "view":
-			if err := printCurrentNotifyConfig(streams); err != nil {
-				fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.view_failed"), err)
+			if err == nil {
+				err = deliver(ctx, s, path, id, ch, "Agent Notify 测试", "这是一条测试通知。")
 			}
-		case "clean":
-			if err := runCleanConfig(streams, prompter); err != nil {
-				if !errors.Is(err, ErrCancelled) {
-					fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.clean_failed"), err)
+		case "behavior":
+			err = runBehavior(path, p)
+		case "toggle":
+			var id string
+			id, err = p.Select("选择 Agent", agentOptions(), "claude")
+			if err == nil {
+				var cfg config.Config
+				cfg, err = config.Load(path)
+				if err == nil {
+					a, _, _ := cfg.Target(id)
+					var enabled bool
+					enabled, err = p.Confirm("启用通知", a.Enabled)
+					if err == nil {
+						if enabled && len(a.InstalledPaths) == 0 {
+							err = fmt.Errorf("请先配置该 Agent 的接入")
+						} else {
+							a.Enabled = enabled
+							err = config.Save(path, cfg)
+						}
+					}
 				}
 			}
-		case "language":
-			if err := runSelectLanguage(streams, prompter); err != nil {
-				if !errors.Is(err, ErrCancelled) {
-					fmt.Fprintf(streams.Stdout, "\n%s: %v\n\n", i18n.T("err.config_failed"), err)
+		case "uninstall":
+			var id string
+			options := append(agentOptions(), PromptOption{Label: "全部首期 Agent", Value: "all"})
+			id, err = p.Select("卸载哪个 Agent 的接入", options, "claude")
+			if err == nil {
+				var yes bool
+				yes, err = p.Confirm("移除 Agent Notify 接入，保留其他 hooks 和通知配置？", false)
+				if err == nil && yes {
+					err = app.Uninstall(path, id)
 				}
 			}
-		case "quit":
-			return nil
+		}
+		if err != nil {
+			if err == ErrCancelled {
+				return nil
+			}
+			fmt.Fprintf(s.Stderr, "操作失败: %v\n\n", err)
 		}
 	}
 }
-
-func runTestMenu(ctx context.Context, streams Streams, prompter Prompter) error {
-	choice, err := prompter.Select(i18n.T("test.title"), []PromptOption{
-		{Label: i18n.T("test.system"), Value: "system"},
-		{Label: i18n.T("test.feishu"), Value: "feishu"},
-		{Label: i18n.T("test.wechat_personal"), Value: "wechat"},
-		{Label: i18n.T("test.wechat"), Value: "wechat-work"},
-		{Label: i18n.T("test.dingtalk"), Value: "dingtalk"},
-		{Label: i18n.T("test.bark"), Value: "bark"},
-		{Label: i18n.T("test.ntfy"), Value: "ntfy"},
-		{Label: i18n.T("test.slack"), Value: "slack"},
-		{Label: i18n.T("test.back"), Value: "back"},
-	}, "system")
+func runSetup(s Streams, path string, p Prompter) error {
+	cfg, err := config.Load(path)
 	if err != nil {
 		return err
 	}
-
-	switch choice {
-	case "feishu":
-		return runTestFeishu(ctx, streams)
-	case "system":
-		return runTestSystem(ctx, streams)
-	case "wechat":
-		return runTestWechat(ctx, streams)
-	case "wechat-work":
-		return runTestWechatWork(ctx, streams)
-	case "dingtalk":
-		return runTestDingTalk(ctx, streams)
-	case "bark":
-		return runTestBark(ctx, streams)
-	case "ntfy":
-		return runTestNtfy(ctx, streams)
-	case "slack":
-		return runTestSlack(ctx, streams)
-	default:
-		return nil
+	id, err := p.Select("选择 Agent", agentOptions(), "claude")
+	if err != nil {
+		return err
 	}
-}
-
-func runChannelsMenu(ctx context.Context, streams Streams, prompter Prompter) error {
-	for {
-		choice, err := prompter.Select(i18n.T("channel.title"), []PromptOption{
-			{Label: i18n.T("channel.feishu"), Value: "feishu-init"},
-			{Label: i18n.T("channel.wechat_personal"), Value: "wechat-init"},
-			{Label: i18n.T("channel.wechat"), Value: "wechatwork-init"},
-			{Label: i18n.T("channel.dingtalk"), Value: "dingtalk-init"},
-			{Label: i18n.T("channel.bark"), Value: "bark-init"},
-			{Label: i18n.T("channel.ntfy"), Value: "ntfy-init"},
-			{Label: i18n.T("channel.slack"), Value: "slack-init"},
-			{Label: i18n.T("channel.back"), Value: "back"},
-		}, "feishu-init")
-		if err != nil {
+	a, n, _ := cfg.Target(id)
+	scope, err := p.Select("安装范围", []PromptOption{{Label: "当前用户（推荐）", Value: "user"}, {Label: "当前项目", Value: "project"}}, a.InstallScope)
+	if err != nil {
+		return err
+	}
+	channels, err := p.MultiSelect("通知渠道（空格选择，回车确认）", []PromptOption{{Label: "Windows 通知（支持 WSL）", Value: "system"}, {Label: "企业微信机器人", Value: "wechat-work"}}, selectedChannels(n.Channels))
+	if err != nil {
+		return err
+	}
+	if len(channels) == 0 {
+		return fmt.Errorf("请至少选择一个渠道；临时关闭请使用启用 / 关闭菜单")
+	}
+	selected := n.Channels
+	selected.System.Enabled = has(channels, "system")
+	selected.WechatWork.Enabled = has(channels, "wechat-work")
+	if selected.WechatWork.Enabled {
+		webhook := strings.TrimSpace(os.Getenv("AGENT_NOTIFY_WECOM_WEBHOOK"))
+		if webhook == "" && selected.WechatWork.WebhookURL != "" {
+			keep, err := p.Confirm("已有企业微信 Webhook，继续使用？", true)
+			if err != nil {
+				return err
+			}
+			if keep {
+				webhook = selected.WechatWork.WebhookURL
+			}
+		}
+		if webhook == "" {
+			webhook, err = secretInput(p, "企业微信机器人 Webhook（输入隐藏）")
+			if err != nil {
+				return err
+			}
+		}
+		selected.WechatWork.WebhookURL = strings.TrimSpace(webhook)
+		if err := config.ValidateWebhook(selected.WechatWork.WebhookURL); err != nil {
 			return err
 		}
-
-		switch choice {
-		case "feishu-init":
-			if _, err := feishucli.Reinitialize(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintln(streams.Stdout, i18n.T("msg.feishu_cli_done"))
-		case "wechat-init":
-			if err := runInitWechat(streams, prompter); err != nil {
-				return err
-			}
-		case "wechatwork-init":
-			if err := runInitWechatWork(streams, prompter); err != nil {
-				return err
-			}
-		case "dingtalk-init":
-			if err := runInitDingTalk(streams, prompter); err != nil {
-				return err
-			}
-		case "bark-init":
-			if err := runInitBark(streams, prompter); err != nil {
-				return err
-			}
-		case "ntfy-init":
-			if err := runInitNtfy(streams, prompter); err != nil {
-				return err
-			}
-		case "slack-init":
-			if err := runInitSlack(streams, prompter); err != nil {
-				return err
-			}
-		case "back":
-			return nil
-		}
 	}
-}
-
-func runCleanConfig(streams Streams, prompter Prompter) error {
-	confirm, err := prompter.Confirm(i18n.T("clean.confirm"), false)
+	labels := map[string]string{"permission_required": "等待授权", "input_required": "等待输入", "run_completed": "运行完成", "run_failed": "运行失败"}
+	opts := []PromptOption{}
+	for _, event := range config.Events(id) {
+		opts = append(opts, PromptOption{Label: labels[event], Value: event})
+	}
+	events, err := p.MultiSelect("需要接收的事件", opts, n.Events)
 	if err != nil {
 		return err
 	}
-	if !confirm {
-		fmt.Fprintln(streams.Stdout, i18n.T("clean.cancelled"))
-		return nil
+	if len(events) == 0 {
+		return fmt.Errorf("请至少选择一个通知事件")
 	}
-
-	// 先把安装记录读出来再删配置:install_scope 与 installed_paths 都在
-	// config.yaml 里,删掉之后就无从知道 project scope 当初装到了哪个目录。
-	cfgPath, err := config.DefaultPath()
+	target, err := app.Configure(path, app.Setup{Agent: id, Scope: scope, Events: events, Channels: selected})
 	if err != nil {
 		return err
 	}
-	cfg, cfgErr := config.Load(cfgPath)
-	targets := hookCleanupTargets(cfg, cfgErr == nil)
-
-	// 清理 agent-notify 配置
-	if err := os.Remove(cfgPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("%s: %w", i18n.T("clean.delete_failed"), err)
-	}
-
-	// 清理状态文件（含临时冻结 / 聚焦缓存及其锁文件）
-	statePath, err := config.StatePath()
-	if err != nil {
-		return err
-	}
-	for _, p := range []string{
-		statePath,
-		statePath + ".lock",
-		state.FreezePath(statePath),
-		state.FreezePath(statePath) + ".lock",
-		state.FocusWindowsPath(statePath),
-		state.FocusWindowsPath(statePath) + ".lock",
-	} {
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("%s: %w", i18n.T("clean.delete_failed"), err)
-		}
-	}
-
-	// 清理日志文件
-	logPath, err := config.LogPath()
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("%s: %w", i18n.T("clean.delete_failed"), err)
-	}
-
-	// 清理 Claude / Codex / ZCode / Grok 中由本插件写入的 hook（保留用户挂载的其他 hook）
-	for _, target := range targets {
-		for _, settingsPath := range target.paths {
-			if err := target.integration.Uninstall(settingsPath); err != nil {
-				fmt.Fprintf(streams.Stdout, i18n.T("clean.hooks_failed"), target.integration.Name(), settingsPath, err)
-				continue
-			}
-			fmt.Fprintf(streams.Stdout, i18n.T("clean.hooks_done"), target.integration.Name(), settingsPath)
-		}
-	}
-
-	// 保存一个干净的默认配置（所有通知都关闭）
-	defaultCfg := config.Default()
-	// Clear ClaudeCode channel toggles and events
-	defaultCfg.Notify.ClaudeCode.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.System.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.ClaudeCode.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.ClaudeCode.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.ClaudeCode.Channels.Bark.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.ClaudeCode.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.ClaudeCode.Channels.Slack.Enabled = false
-	defaultCfg.Notify.ClaudeCode.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.ClaudeCode.Events = nil
-	// Clear Codex channel toggles
-	defaultCfg.Notify.Codex.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.Codex.Channels.System.Enabled = false
-	defaultCfg.Notify.Codex.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.Codex.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.Codex.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.Codex.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.Codex.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.Codex.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.Codex.Channels.Bark.Enabled = false
-	defaultCfg.Notify.Codex.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.Codex.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.Codex.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.Codex.Channels.Slack.Enabled = false
-	defaultCfg.Notify.Codex.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.Codex.Events = nil
-	// Clear ZCode channel toggles
-	defaultCfg.Notify.ZCode.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.System.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.ZCode.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.ZCode.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.ZCode.Channels.Bark.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.ZCode.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.ZCode.Channels.Slack.Enabled = false
-	defaultCfg.Notify.ZCode.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.ZCode.Events = nil
-	// Clear Grok channel toggles
-	defaultCfg.Notify.Grok.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.Grok.Channels.System.Enabled = false
-	defaultCfg.Notify.Grok.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.Grok.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.Grok.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.Grok.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.Grok.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.Grok.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.Grok.Channels.Bark.Enabled = false
-	defaultCfg.Notify.Grok.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.Grok.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.Grok.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.Grok.Channels.Slack.Enabled = false
-	defaultCfg.Notify.Grok.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.Grok.Events = nil
-	// Clear Droid channel toggles
-	defaultCfg.Notify.Droid.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.Droid.Channels.System.Enabled = false
-	defaultCfg.Notify.Droid.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.Droid.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.Droid.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.Droid.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.Droid.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.Droid.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.Droid.Channels.Bark.Enabled = false
-	defaultCfg.Notify.Droid.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.Droid.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.Droid.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.Droid.Channels.Slack.Enabled = false
-	defaultCfg.Notify.Droid.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.Droid.Events = nil
-	// Clear OpenCode channel toggles
-	defaultCfg.Notify.OpenCode.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.System.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.OpenCode.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.OpenCode.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.OpenCode.Channels.Bark.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.OpenCode.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.OpenCode.Channels.Slack.Enabled = false
-	defaultCfg.Notify.OpenCode.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.OpenCode.Events = nil
-	// Clear OMP channel toggles
-	defaultCfg.Notify.OMP.Channels.Feishu.Enabled = false
-	defaultCfg.Notify.OMP.Channels.System.Enabled = false
-	defaultCfg.Notify.OMP.Channels.Wechat.Enabled = false
-	defaultCfg.Notify.OMP.Channels.Wechat.WebhookURL = ""
-	defaultCfg.Notify.OMP.Channels.WechatWork.Enabled = false
-	defaultCfg.Notify.OMP.Channels.WechatWork.WebhookURL = ""
-	defaultCfg.Notify.OMP.Channels.DingTalk.Enabled = false
-	defaultCfg.Notify.OMP.Channels.DingTalk.WebhookURL = ""
-	defaultCfg.Notify.OMP.Channels.Bark.Enabled = false
-	defaultCfg.Notify.OMP.Channels.Bark.WebhookURL = ""
-	defaultCfg.Notify.OMP.Channels.Ntfy.Enabled = false
-	defaultCfg.Notify.OMP.Channels.Ntfy.TopicURL = ""
-	defaultCfg.Notify.OMP.Channels.Slack.Enabled = false
-	defaultCfg.Notify.OMP.Channels.Slack.WebhookURL = ""
-	defaultCfg.Notify.OMP.Events = nil
-	if err := config.Save(cfgPath, defaultCfg); err != nil {
-		return fmt.Errorf("%s: %w", i18n.T("clean.save_default_err"), err)
-	}
-
-	fmt.Fprintln(streams.Stdout, i18n.T("clean.done"))
+	printSetupDone(s, id, target)
 	return nil
 }
-
-func renderBanner(streams Streams) {
-	fmt.Fprint(streams.Stdout, banner)
-	fmt.Fprintf(streams.Stdout, "  Version: %s  |  https://github.com/hellolib/agent-notify\n\n", Version)
+func secretInput(p Prompter, message string) (string, error) {
+	if secret, ok := p.(interface{ Password(string) (string, error) }); ok {
+		return secret.Password(message)
+	}
+	return p.Input(message, "")
 }
-
-func runFreezeMenu(streams Streams, prompter Prompter) error {
-	store, err := freezeStoreFromDefault()
+func runBehavior(path string, p Prompter) error {
+	cfg, err := config.Load(path)
 	if err != nil {
 		return err
 	}
-	now := time.Now()
-	st := store.Load()
-
-	if st.Active(now) {
-		fmt.Fprintln(streams.Stdout, formatFreezeStatus(st, now))
-		choice, err := prompter.Select(i18n.T("freeze.active_prompt"), []PromptOption{
-			{Label: i18n.T("freeze.action_reset"), Value: "reset"},
-			{Label: i18n.T("freeze.action_clear"), Value: "clear"},
-			{Label: i18n.T("freeze.action_back"), Value: "back"},
-		}, "reset")
+	for _, field := range []struct {
+		label string
+		value *int
+	}{{"去重窗口（秒，0–3600）", &cfg.Behavior.DedupeSeconds}, {"发送超时（秒，1–60）", &cfg.Behavior.SendTimeoutSeconds}} {
+		answer, err := p.Input(field.label, strconv.Itoa(*field.value))
 		if err != nil {
 			return err
 		}
-		switch choice {
-		case "clear":
-			if err := store.Clear(); err != nil {
-				return fmt.Errorf("%s: %w", i18n.T("freeze.err_save"), err)
-			}
-			fmt.Fprintln(streams.Stdout, i18n.T("freeze.cleared"))
-			return nil
-		case "back":
-			return nil
-		case "reset":
-			// fall through to set flow
-		default:
-			return nil
-		}
-	}
-
-	durationChoice, err := prompter.Select(i18n.T("freeze.duration_prompt"), []PromptOption{
-		{Label: i18n.T("freeze.duration_30m"), Value: "30m"},
-		{Label: i18n.T("freeze.duration_1h"), Value: "1h"},
-		{Label: i18n.T("freeze.duration_2h"), Value: "2h"},
-		{Label: i18n.T("freeze.duration_custom"), Value: "custom"},
-		{Label: i18n.T("freeze.action_back"), Value: "back"},
-	}, "1h")
-	if err != nil {
-		return err
-	}
-	if durationChoice == "back" {
-		return nil
-	}
-
-	var until time.Time
-	now = time.Now()
-	if durationChoice == "custom" {
-		raw, err := prompter.Input(i18n.T("freeze.duration_custom_prompt"), "1h")
+		value, err := strconv.Atoi(strings.TrimSpace(answer))
 		if err != nil {
-			return err
+			return fmt.Errorf("请输入整数")
 		}
-		until, err = parseFreezeUntil(now, []string{strings.TrimSpace(raw)}, "")
-		if err != nil {
-			return err
-		}
-	} else {
-		until, err = parseFreezeUntil(now, []string{durationChoice}, "")
-		if err != nil {
-			return err
-		}
+		*field.value = value
 	}
-
-	channelOpts := []PromptOption{
-		{Label: i18n.T("channel.system"), Value: "system"},
-		{Label: i18n.T("channel.feishu"), Value: "feishu"},
-		{Label: i18n.T("channel.wechat_personal"), Value: "wechat"},
-		{Label: i18n.T("channel.wechat"), Value: "wechat-work"},
-		{Label: i18n.T("channel.dingtalk"), Value: "dingtalk"},
-		{Label: i18n.T("channel.bark"), Value: "bark"},
-		{Label: i18n.T("channel.ntfy"), Value: "ntfy"},
-		{Label: i18n.T("channel.slack"), Value: "slack"},
-	}
-	// 默认勾选：当前已配置的远程渠道；系统通知永不默认勾选。
-	// 若正在重设已有冻结，沿用上次冻结渠道（同样过滤掉误存的 system 也不强制）。
-	cfg, cfgErr := loadConfigForFreeze()
-	var defaults []string
-	if st.Active(time.Now()) && len(st.Channels) > 0 {
-		defaults = append([]string(nil), st.Channels...)
-	} else if cfgErr == nil {
-		defaults = enabledRemoteFreezeChannels(cfg)
-	}
-	selected, err := prompter.MultiSelect(i18n.T("freeze.channel_prompt"), channelOpts, defaults)
-	if err != nil {
-		return err
-	}
-	if len(selected) == 0 {
-		return fmt.Errorf("%s", i18n.T("freeze.err_channel_empty"))
-	}
-
-	now = time.Now()
-	if err := store.Set(until, selected, now); err != nil {
-		return fmt.Errorf("%s: %w", i18n.T("freeze.err_save"), err)
-	}
-	fmt.Fprintln(streams.Stdout, formatFreezeDone(store.Load(), now))
-	return nil
-}
-
-func runSelectLanguage(streams Streams, prompter Prompter) error {
-	defaultLang := "zh-CN"
-	if i18n.IsEnglish() {
-		defaultLang = "en-US"
-	}
-
-	choice, err := prompter.Select(i18n.T("menu.language"), []PromptOption{
-		{Label: "中文", Value: "zh-CN"},
-		{Label: "English", Value: "en-US"},
-	}, defaultLang)
-	if err != nil {
-		return err
-	}
-
-	// Persist to config
-	cfgPath, err := config.DefaultPath()
-	if err != nil {
-		return err
-	}
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		return err
-	}
-	cfg.Behavior.Locale = choice
-	if err := config.Save(cfgPath, cfg); err != nil {
-		return err
-	}
-
-	// Apply immediately
-	i18n.Set(choice)
-	return nil
+	return config.Save(path, cfg)
 }

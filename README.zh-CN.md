@@ -1,174 +1,106 @@
-<div align="center">
-
-<img src="assist/brand/bell-only-128.png" alt="Agent Notify" width="90">
+<p align="center"><img src="docs/assets/logo.svg" width="88" alt="Agent Notify 铃铛"></p>
 
 # Agent Notify
 
-<p align="center"><b>在 Agent 需要你时通知你</b>
+**Agent 需要你时，及时收到提醒。** 将等待授权、等待输入、任务完成和任务失败事件发送到 Windows 系统通知或企业微信群机器人。
 
-[![Go Version](https://img.shields.io/badge/Go-%3E%3D1.25-blue.svg)](https://go.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/hellolib/agent-notify.svg)](https://github.com/hellolib/agent-notify/releases)
+[English](README.md) · [下载](https://github.com/flashzzw/agent-notify/releases/latest) · [反馈问题](https://github.com/flashzzw/agent-notify/issues)
 
-<p align="center"><a href="README.md">English</a> | <b>简体中文</b></p>
+[![Test](https://github.com/flashzzw/agent-notify/actions/workflows/test.yml/badge.svg)](https://github.com/flashzzw/agent-notify/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-</div>
+本版本面向 **Windows 和 WSL**，接入 **Claude Code、Codex、基于 Senpi 的新版 Oh My OpenCode（OMO）**。每个 Agent 可以单独配置系统通知、企业微信，或同时启用两个渠道。交互向导目前使用中文。
 
-## 项目简介
+## 下载安装
 
-一个面向 AI Agent 的通知配置工具。支持将 Claude Code、Codex、OpenCode、ZCode (Z.ai)、Grok、Droid、OMP (oh-my-pi) 等 Agent 的事件通知推送到飞书、企业微信、钉钉、Bark、ntfy 和系统通知。
+打开 [Releases](https://github.com/flashzzw/agent-notify/releases/latest)，按 Agent 所在环境下载。普通 Intel/AMD 电脑选择 `amd64`，ARM 设备选择 `arm64`。
 
-<p align="center">
-  <img src="assist/demo.gif" alt="Agent Notify 演示" width="800">
-</p>
+| Agent 运行环境 | 压缩包 |
+| --- | --- |
+| Windows 10/11 原生 | `agent-notify-<版本>-windows-amd64.zip` 或 `windows-arm64.zip` |
+| WSL | `agent-notify-<版本>-linux-amd64.tar.gz` 或 `linux-arm64.tar.gz` |
+
+解压到固定目录。包内包含 `agent-notify.exe`（Windows）或 `agent-notify`（WSL）、使用文档和 MIT 许可证。通知工具本身不需要安装 Go 或额外的 Node.js；编程 Agent 仍需它自己的运行环境。
+
+在解压目录中打开 Windows PowerShell：
+
+```powershell
+.gent-notify.exe
+```
+
+WSL 用户在解压目录中运行：
+
+```bash
+chmod +x agent-notify
+./agent-notify
+```
+
+按向导选择 Agent、安装范围、渠道和事件。一般选择「当前用户」，多个 Agent 分别配置。将解压目录加入 `PATH` 后，可以直接使用下文的 `agent-notify` 命令；否则使用 `./agent-notify` 或 `.gent-notify.exe`。
+
+WSL 系统通知需要启用 Windows 互操作，并能够调用 `powershell.exe`。本版本不提供普通 Linux 桌面通知。发行二进制暂未签名，下载完整性可用随附的 `SHA256SUMS` 校验。
 
 ## 快速开始
 
-免安装直接运行：
+只接收桌面通知：
 
 ```bash
-npx agent-notify@latest
+agent-notify install --agent claude --channels system
+agent-notify test system --agent claude
+agent-notify doctor
 ```
 
-也可以全局安装，把 `agent-notify` 命令放进 `PATH`，之后直接调用：
+把 `claude` 替换为 `codex` 或 `omo` 即可配置对应 Agent。使用企业微信时，在群内创建机器人，然后在向导的隐藏输入框粘贴 Webhook。自动化安装也可以预先注入 `AGENT_NOTIFY_WECOM_WEBHOOK`：
 
 ```bash
-npm install -g agent-notify
-agent-notify
+agent-notify install --agent claude --channels system,wechat-work
+agent-notify test wechat-work --agent claude
 ```
 
-之后升级全局安装：
+环境变量在安装时读取并保存到本地配置，后续 hook 从配置读取。建议通过密钥管理工具或隐藏输入提供变量；直接在终端输入含密钥的赋值命令，仍可能被 shell 历史记录。
+
+## Agent 接入
+
+| Agent（`--agent`） | 默认用户级接入位置 | 支持事件 |
+| --- | --- | --- |
+| Claude Code（`claude`） | `~/.claude/settings.json` | 授权、输入、完成、失败 |
+| Codex（`codex`） | `~/.codex/hooks.json`，并在 `config.toml` 中启用 hooks | 授权、完成 |
+| OMO / Senpi（`omo`） | 若 `~/.omo/agent` 存在，写入其 `extensions/agent-notify.ts`；否则使用 `~/.senpi/agent/extensions/agent-notify.ts` | 授权、输入、完成、失败 |
+
+OMO 接入使用 Senpi 的 `agent_settled` 和 `herdr:blocked` 扩展接口，不安装旧版 OpenCode 插件。Codex 安装后请重启并运行 `/hooks` 审核、信任变更；OMO 运行 `/reload` 或重启以加载扩展。自定义目录、项目级安装和事件名称见[使用与排错](docs/usage.md)。
+
+## 日常使用
 
 ```bash
-npm update -g agent-notify
+agent-notify config show                 # Webhook 自动隐藏
+agent-notify disable --agent codex
+agent-notify enable --agent codex
+agent-notify freeze --for 30m            # 暂停企业微信，系统通知继续
+agent-notify unfreeze
+agent-notify uninstall --agent claude    # 保留其他 hooks 和通知配置
+agent-notify --help
 ```
 
-两种方式跑的是同一个启动器：首次运行都会把平台二进制下载到 `~/.agent-notify/`，所以 npm 包本身只是个引导程序。启动器是按**它所来自的那个 npm 包版本**更新二进制的，并不会自己去追最新版本，所以要让包本身保持最新：`npx agent-notify@latest` 每次都会重新向 registry 解析，全局安装则只有跑 `npm update -g agent-notify` 才会动。如果你要经常直接调用 `agent-notify`（`agent-notify doctor`、`agent-notify send`、`agent-notify freeze`），全局安装更顺手，不必每次都走 `npx`。需要锁定版本可以 `npm install -g agent-notify@0.17.0`。
+配置位于 `~/.agent-notify/config.yaml`（Windows 为 `%USERPROFILE%\.agent-notify\config.yaml`），可用 `--config <路径>` 或 `AGENT_NOTIFY_CONFIG` 修改。同目录保存状态、日志和配置备份。
 
-也可以直接通过已配置的渠道发送自定义消息：
+Agent hook 保存程序绝对路径。移动或更换安装目录后，重新运行 `install` 或向导。发送具有超时和去重保护；hook 错误写入日志后返回成功，避免通知失败中断 Agent。通知为单向提醒，不支持点击后返回或聚焦终端。
+
+## 隐私
+
+企业微信会收到通知事件、消息正文及可用的工作区信息，Agent 消息中可能包含代码或项目资料。本地配置及其备份包含 Webhook 密钥，请妥善保管。分享配置或日志前请阅读 [SECURITY.md](https://github.com/flashzzw/agent-notify/blob/main/SECURITY.md)。
+
+## 开发
+
+需要 Go 1.25 或更新版本。Senpi 扩展契约测试需要 Node.js 22 或更新版本，未安装 Node 时该测试会跳过。`make package` 还需要 Python 3 和 Make。
 
 ```bash
-agent-notify send --channel wechat-work --agent omp "部署完成，请检查服务"
-agent-notify send --channel ntfy --agent omp --title "构建结果" --message "构建成功"
+make test
+make vet
+make build
+make package VERSION=v0.1.0
 ```
 
-`send` 会读取对应 Agent 的渠道配置，并显式发送一条消息，不受该渠道 `enabled` 开关和事件订阅列表限制。支持 `system`、`feishu`、`wechat`、`wechat-work`、`dingtalk`、`bark`、`ntfy` 和 `slack`。
+程序输出到 `bin/`，压缩包和 `SHA256SUMS` 输出到 `dist/`。原生 Windows 可直接使用 `go test ./...`、`go vet ./...`、`go build -o bin/agent-notify.exe ./cmd/agent-notify` 和 `python scripts/package.py --version v0.1.0`。更多说明见 [CONTRIBUTING.md](https://github.com/flashzzw/agent-notify/blob/main/CONTRIBUTING.md)。
 
+## 许可证与来源
 
-## 功能特性
-### 支持的通知渠道
-|   通知渠道   | 说明 | 绑定方式   |
-|:--------|------|--------|
-| 🖥️ 系统通知 | 支持 macOS、Linux、Windows 系统通知 | 原生支持   |
-| <img src="assist/logo/feishu.png" width="24" align="absmiddle"> 飞书   | 支持一键扫码绑定、支持飞书机器人消息推送 | 二维码扫描  |
-| <img src="assist/logo/qiyeweixin.png" width="24" align="absmiddle"> 企业微信  | 支持通过企业微信群机器人 Webhook 推送通知消息 | Webhook |
-| <img src="assist/logo/dingding.png" width="24" align="absmiddle"> 钉钉  | 支持通过钉钉群机器人 Webhook 推送通知消息 | Webhook |
-| <img src="assist/logo/bark.png" width="24" align="absmiddle"> Bark  | 支持通过 Bark Webhook URL 推送到 iOS 设备 | Webhook |
-| <img src="assist/logo/ntfy.png" width="24" align="absmiddle"> ntfy  | 通过 ntfy.sh 或自托管 ntfy 服务推送 | Topic |
-| <img src="assist/logo/slack.png" width="24" align="absmiddle"> Slack | 通过 Slack Incoming Webhook 推送 | Webhook |
-| <img src="assist/logo/discord.png" width="24" align="absmiddle"> Discord | 通过 Discord 频道 Webhook 推送 | 🚧 Webhook |
-| <img src="assist/logo/telegram.png" width="24" align="absmiddle"> Telegram | 通过 Telegram Bot API 推送 | 🚧 Bot token |
-
-### 支持的事件
-
-| 事件 | Claude Code | Codex | OpenCode | ZCode | Grok | Droid | OMP |
-|------|:---:|:---:|:---:|:---:|:----:|:---:|:---:|
-| `permission_required` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
-| `input_required` | ✅ | — | ✅ | — | ✅ | ✅ | ✅ |
-| `run_completed` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `run_failed` | ✅ | — | ✅ | ✅ | ✅ | — | ✅ |
-
-说明：
-
-- Claude Code 通过 `~/.claude/settings.json` 的 hooks 订阅：`PermissionRequest`、`Notification`、`Stop`、`PostToolUseFailure`、`SessionStart`。
-- Codex 通过 `~/.codex/hooks.json` 订阅 `PermissionRequest`、`Stop`（映射到 `permission_required` / `run_completed`）以及 `SessionStart`。`input_required` 与 `run_failed` Codex 目前没有对应 hook，因此暂不支持。
-- OpenCode 使用 JS 插件而非原生 hooks：插件写入 `~/.agent-notify/opencode-plugin.js`（二进制路径烘焙进 JS），路径注册到 `~/.config/opencode/opencode.json`（user）或 `./opencode.json`（project）的 `plugin` 数组。插件订阅 `session.created`→`session_start`、`permission.asked`→`permission_required`、`session.status`(idle)→`input_required`、`session.idle`→`run_completed`、`session.error`→`run_failed`。
-- ZCode 通过 `~/.zcode/cli/config.json` 订阅 `SessionStart`、`PermissionRequest`、`PostToolUseFailure`、`Stop`，映射到 `permission_required`、`run_failed`、`run_completed`。ZCode 没有 `Notification` 事件（因此不支持 `input_required`），且其 hook 配置格式较为严格——无法识别的事件名称会导致整个 hooks 配置被静默丢弃。
-- Grok 通过 `~/.grok/hooks/agent-notify.json` 订阅 `SessionStart`、`Notification`、`Stop`、`StopFailure`、`PostToolUseFailure`。Grok 没有独立的 `PermissionRequest` 事件，带 permission/approval 语义的 `Notification` 会映射为 `permission_required`（表中 *）；其它通知映射为 `input_required`。`StopFailure` / `PostToolUseFailure` 映射为 `run_failed`。
-- Droid 通过 `~/.factory/hooks.json` 订阅 `SessionStart`、`Notification`、`Stop`，映射为 `session_start` / `permission_required`|`input_required` / `run_completed`。Droid 无失败事件，故不支持 `run_failed`。`session_start` 仅用于点击聚焦的窗口捕获，不作为通知事件。
-- OMP 使用原生 TS Extension，而不是 JSON command hook：用户级默认写入 `~/.omp/agent/extensions/agent-notify.ts`，项目级写入 `.omp/extensions/agent-notify.ts`。扩展监听 `session_start`、`tool_approval_requested`、`tool_execution_start` 和 `session_stop`，分别映射到聚焦、`permission_required`、`input_required` 和 `run_completed`/`run_failed`。`ask` 工具会阻塞会话等待用户回答，因此其 `tool_execution_start` 映射为 `input_required`；运行成败由 `session_stop` 携带的 stop reason 判定——`stop_reason: "error"`（或带错误信息的 aborted）映射为 `run_failed`，普通单工具报错不视为运行失败。`permission_required` 只有 OMP 实际启用了工具审批并产生审批请求时才会触发。
-- OMP 用户目录会遵循 `OMP_PROFILE` / `PI_PROFILE` profile，以及 `PI_CODING_AGENT_DIR` 覆盖路径。
-- **`SessionStart` 不产生任何通知。** 它在所有 agent 上被订阅，仅用于在会话启动时捕获终端窗口，为 Linux 的窗口级点击聚焦提供支持（见下方「点击聚焦」一节）；在 macOS/Windows 上该 hook 为空操作。
-
-### 支持的平台
-
-| 平台 | 架构 | 状态 |
-|:---:|:---:|:---:|
-| macOS | amd64 / arm64 | ✅ |
-| Linux | amd64 / arm64 | ✅ |
-| Windows | amd64 / arm64 | ✅ |
-
-### 点击聚焦（Click-to-Focus）
-
-系统通知可点击——点击后会跳回运行 agent 的终端 / 窗口。各平台行为不同：
-
-- **macOS** — 默认应用级（激活 agent 所在的终端/IDE 应用）。若要窗口级（多窗口时也精确跳回那一个），在登录 shell 环境（如 `~/.zshrc`）里设置 `AGENT_NOTIFY_FOCUS_PRECISION=window`；这会用到内置 helper 并需要「辅助功能」权限。不设置则保持应用级。
-- **Linux（X11）** — 窗口级。在会话启动时（通过 `SessionStart` hook）捕获精确的终端窗口，点击时跳回，因此能区分单进程多窗口终端（deepin-terminal、GNOME Terminal 等）的兄弟窗口。原生 Wayland 窗口无法定位。
-- **Windows** — 通过内置 helper 跳回终端窗口。
-
-> **`AGENT_NOTIFY_FOCUS_PRECISION`** 接受 `window`（窗口级）或 `app`（应用级，默认值）。取值不区分大小写、会去除首尾空白；未设置或无法识别的值都回退为 `app`。该变量**仅对 macOS 生效**——Linux 始终是窗口级，Windows 用自己的 helper。
-
-系统渠道默认开启点击聚焦；目标应用/窗口会从 hook 的环境变量与进程树自动识别。
-
-## 安装说明
-
-```bash
-npx agent-notify@latest
-```
-
-首次运行会从 GitHub Releases 下载当前 npm 包版本对应平台的二进制文件，并安装到：
-
-- macOS / Linux: `~/.agent-notify/agent-notify`
-- Windows: `~/.agent-notify/agent-notify.exe`
-
-之后每次运行都会把本地二进制版本和 launcher 所来自的那个 npm 包版本做比较：不存在则自动下载，不一致则自动更新，否则直接运行。要升级到新发布版本就用 `npx agent-notify@latest`（全局安装则 `npm update -g agent-notify`）。launcher 不会持久修改 PATH，始终用绝对路径执行。
-
-> **注意**: Codex 通过 `~/.codex/hooks.json` 接入官方 hooks 系统，目前仅订阅 `PermissionRequest`、`Stop` 两个事件。首次安装后请在 codex 内运行 `/hooks` 完成 trust 审核。
->
-> **Grok**: 写入 `~/.grok/hooks/agent-notify.json`。全局 hooks 始终可信；项目级 hooks（`.grok/hooks/`）需在仓库内运行 `/hooks-trust` 或使用 `--trust`。安装后可在 Grok 中运行 `/hooks`（或 `Ctrl+L`）确认已加载。
-
-
-## 配置说明
-
-> agent-notify 不需要手动处理配置文件，该章节仅是为了说明配置相关信息。
-
-agent-notify 自身配置位于 `~/.agent-notify/config.yaml`。**新安装默认关闭所有 Agent 与通知渠道**——需运行一次 `npx agent-notify@latest`（配置向导）启用你需要的 Agent 与渠道。这样可避免只配置了一个 Agent 后，在「查看配置 / 诊断」里把未配置的 Agent 显示为已就绪。已有配置文件不受影响。
-
-Agent 集成配置位置：
-
-- Claude Code: `~/.claude/settings.json`（写入 hooks → 命令 `agent-notify handle-claude-hook`）
-- Codex: `~/.codex/hooks.json`（写入 hooks → 命令 `agent-notify handle-codex-hook`，需在 codex 内运行 `/hooks` 完成 trust）
-- OpenCode: `~/.config/opencode/opencode.json`（写入 `plugin` 数组 → `~/.agent-notify/opencode-plugin.js`，命令 `agent-notify handle-opencode-hook`；项目 scope 为 `./opencode.json`）
-- ZCode: `~/.zcode/cli/config.json`（写入 `hooks.events.<Event>` + `hooks.enabled` → 命令 `agent-notify handle-zcode-hook`；重启 ZCode 使配置生效）
-- Grok: `~/.grok/hooks/agent-notify.json`（写入 hooks → 命令 `agent-notify handle-grok-hook`；项目 scope 为 `.grok/hooks/agent-notify.json`）
-- Droid: `~/.factory/hooks.json`（写入 hooks → 命令 `agent-notify handle-droid-hook`；项目 scope 为 `.factory/hooks.json`）
-- OMP: `~/.omp/agent/extensions/agent-notify.ts`（写入原生 TS Extension；项目 scope 为 `.omp/extensions/agent-notify.ts`）
-
-### 企业微信机器人绑定小技巧
-
-1. **创建单人通知群**：在企业微信中发起群聊（随便拉几个同事），创建成功后**不要在群里发言**，直接将其他人移出，此时该群将变成你的单人通知群；
-2. **添加机器人**：「群设置」->「消息推送」->「添加」-> 「自定义消息推送」，命名并保存；
-3. **获取 Webhook 地址**：复制生成的地址，格式类似 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`；
-4. **绑定配置**：运行 `npx agent-notify@latest`，在配置向导中选择启用企业微信渠道，粘贴 Webhook URL 即可；
-> 旧版企业微信添加机器人步骤：「群设置」->「群机器人」->「添加机器人」-> 「新建机器人」，命名并保存
-
-## 工作流程
-
-<p align="center">
-  <img src="assist/workflow.png" alt="工作流程图" />
-</p>
-
-## 效果图
-
-| | |
-|:---:|:---:|
-| <img src="assist/launch-setting.png" alt="软件配置" width="75%"> | <img src="assist/feishu-bind.png" alt="飞书绑定" width="75%"> |
-| **软件配置** | **飞书绑定** |
-| <img src="assist/feishu-notify-phone.png" alt="飞书通知" width="55%"> | <img src="assist/wecom-notify.jpg" alt="企业微信通知" width="55%"> |
-| **飞书通知** | **企业微信通知** |
-| <img src="assist/system-notify.png" alt="系统通知" width="55%"> | |
-| **系统通知** | |
-
-## 致谢
-
-感谢 [LINUX DO](https://linux.do/) 社区朋友们的支持与反馈。
+使用 [MIT](LICENSE) 许可证，基于 [hellolib/agent-notify](https://github.com/hellolib/agent-notify) 改造，保留原作者版权和 Git 历史。本仓库维护面向 Windows/WSL 的独立版本及发布序列；上游 npm 包和 Release 与本仓库版本分开。

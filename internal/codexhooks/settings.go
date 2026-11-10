@@ -4,9 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 // hookCommandMarker 用于识别本插件写入的 Codex hook。
@@ -14,9 +13,8 @@ const hookCommandMarker = "handle-codex-hook"
 
 // managedEvents 是本插件托管的 Codex 事件列表。
 // PermissionRequest / Stop 对应项目里的 permission_required / run_completed。
-// SessionStart 仅用于点击聚焦的窗口捕获（见 agenthooks.Dispatch），不产生任何通知。
+// 旧版配置可能仍包含 SessionStart；当前首期安装不再订阅它。
 var managedEvents = []string{
-	"SessionStart",
 	"PermissionRequest",
 	"Stop",
 }
@@ -48,17 +46,20 @@ func BuildHookSettings(binaryPath string) map[string]any {
 
 // Install 以增量方式写入 hooks.json：已存在 agent-notify 的 hook 则跳过，
 // 不覆盖用户自己挂载的其他 hook。同时确保 config.toml 中 [features] hooks = true。
-func Install(path string, binaryPath string) error {
+func Install(path string, binaryPath string, configPath ...string) error {
 	settings, err := common.ReadOrderedSettings(path)
 	if err != nil {
 		return err
 	}
 
 	binaryPath = common.ResolveBinaryPath(binaryPath)
-	command := buildHookCommand(binaryPath)
+	command := buildHookCommand(binaryPath) + common.ConfigArgument(configPath)
 
 	hooks, err := common.ChildObject(settings, "hooks")
 	if err != nil {
+		return err
+	}
+	if err := common.RemoveManagedEvent(&hooks, "SessionStart", hookCommandMarker); err != nil {
 		return err
 	}
 	if err := common.InstallManagedHooks(&hooks, managedEvents, hookCommandMarker, command,
@@ -84,9 +85,6 @@ func Install(path string, binaryPath string) error {
 // Windows 平台 Codex 对 JSON 字符串中的双引号和反斜杠解析较严格,
 // 因此使用裸路径;其它平台保留 shell 引号转义。
 func buildHookCommand(binaryPath string) string {
-	if runtime.GOOS == "windows" {
-		return binaryPath + " " + hookCommandMarker
-	}
 	return common.QuotePathForShell(binaryPath) + " " + hookCommandMarker
 }
 

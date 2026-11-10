@@ -2,324 +2,141 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"github.com/flashzzw/agent-notify/internal/common"
+	"gopkg.in/yaml.v3"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
-// Config is the root configuration structure for agent-notify.
+const currentConfigVersion = 3
+
+var Agents = []string{"claude", "codex", "omo"}
+
 type Config struct {
-	Version      int            `yaml:"version"`                 // 配置版本号
-	Agent        AgentConfig    `yaml:"agent"`                   // Agent 安装配置
-	Notify       NotifyConfig   `yaml:"notify"`                  // 通知配置
-	Behavior     BehaviorConfig `yaml:"behavior"`                // 行为配置
-	StarPrompted bool           `yaml:"star_prompted,omitempty"` // 是否已展示过一次性 GitHub star 引导
+	Version  int            `yaml:"version"`
+	Agent    AgentConfig    `yaml:"agent"`
+	Notify   NotifyConfig   `yaml:"notify"`
+	Behavior BehaviorConfig `yaml:"behavior"`
+	// Legacy fields round-trip without being executable in the first-release runtime.
+	Extra map[string]any `yaml:",inline"`
 }
-
-// AgentConfig holds configuration for supported agents.
 type AgentConfig struct {
-	ClaudeCode AgentTargetConfig `yaml:"claude_code"` // Claude Code 配置
-	Codex      AgentTargetConfig `yaml:"codex"`       // Codex 配置
-	ZCode      AgentTargetConfig `yaml:"zcode"`       // ZCode 配置
-	Grok       AgentTargetConfig `yaml:"grok"`        // Grok 配置
-	Droid      AgentTargetConfig `yaml:"droid"`       // Droid 配置
-	OpenCode   AgentTargetConfig `yaml:"opencode"`    // OpenCode 配置
-	OMP        AgentTargetConfig `yaml:"omp"`         // OMP (oh-my-pi) 配置
+	ClaudeCode AgentTargetConfig `yaml:"claude_code"`
+	Codex      AgentTargetConfig `yaml:"codex"`
+	OMO        AgentTargetConfig `yaml:"omo"`
+	Extra      map[string]any    `yaml:",inline"`
 }
-
-// AgentTargetConfig holds configuration for a specific agent.
 type AgentTargetConfig struct {
-	Enabled      bool   `yaml:"enabled"`       // 是否启用该 Agent 的通知
-	InstallScope string `yaml:"install_scope"` // 安装范围: user 或 project
-	// InstalledPaths 是实际写入过 hook 的配置文件绝对路径。
-	// install_scope 只记 "user"/"project",而 project scope 解析成的相对路径
-	// (.claude/settings.json)依赖当时的工作目录——换个目录执行 clean 就再也
-	// 找不到它。记下绝对路径才能可靠地清理,也支持在多个项目里分别安装。
+	Enabled        bool     `yaml:"enabled"`
+	InstallScope   string   `yaml:"install_scope"`
 	InstalledPaths []string `yaml:"installed_paths,omitempty"`
+	BinaryPath     string   `yaml:"binary_path,omitempty"`
+}
+type NotifyConfig struct {
+	ClaudeCode AgentNotifyConfig `yaml:"claude_code"`
+	Codex      AgentNotifyConfig `yaml:"codex"`
+	OMO        AgentNotifyConfig `yaml:"omo"`
+	Extra      map[string]any    `yaml:",inline"`
+}
+type AgentNotifyConfig struct {
+	Events   []string       `yaml:"events"`
+	Channels ChannelsConfig `yaml:"channels"`
+}
+type ChannelsConfig struct {
+	System     SystemChannelConfig     `yaml:"system"`
+	WechatWork WechatWorkChannelConfig `yaml:"wechat_work"`
+	Extra      map[string]any          `yaml:",inline"`
+}
+type SystemChannelConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+type WechatWorkChannelConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	WebhookURL string `yaml:"webhook_url,omitempty"`
+}
+type BehaviorConfig struct {
+	DedupeSeconds      int    `yaml:"dedupe_seconds"`
+	SendTimeoutSeconds int    `yaml:"send_timeout_seconds"`
+	Locale             string `yaml:"locale"`
 }
 
-// RecordInstalledPath 把 path 的绝对形式并入 paths(已存在则不重复追加)。
+func AgentName(agent string) string {
+	switch agent {
+	case "claude", "claude_code":
+		return "Claude Code"
+	case "codex":
+		return "Codex"
+	case "omo", "opencode":
+		return "Oh My OpenCode"
+	default:
+		return agent
+	}
+}
+func NormalizeAgent(agent string) string {
+	switch strings.ToLower(strings.TrimSpace(agent)) {
+	case "claude", "claude_code":
+		return "claude"
+	case "codex":
+		return "codex"
+	case "omo", "opencode":
+		return "omo"
+	default:
+		return ""
+	}
+}
+
+// Target centralizes aliases and prevents an unknown agent falling back to Claude.
+func (c *Config) Target(agent string) (*AgentTargetConfig, *AgentNotifyConfig, error) {
+	switch NormalizeAgent(agent) {
+	case "claude":
+		return &c.Agent.ClaudeCode, &c.Notify.ClaudeCode, nil
+	case "codex":
+		return &c.Agent.Codex, &c.Notify.Codex, nil
+	case "omo":
+		return &c.Agent.OMO, &c.Notify.OMO, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported agent %q (claude, codex, omo)", agent)
+	}
+}
+func Events(agent string) []string {
+	if NormalizeAgent(agent) == "codex" {
+		return []string{"permission_required", "run_completed"}
+	}
+	return []string{"permission_required", "input_required", "run_completed", "run_failed"}
+}
+func Default() Config {
+	c := Config{Version: currentConfigVersion, Behavior: BehaviorConfig{DedupeSeconds: 10, SendTimeoutSeconds: 10, Locale: "zh-CN"}}
+	for _, id := range Agents {
+		a, n, _ := c.Target(id)
+		a.InstallScope = "user"
+		n.Events = Events(id)
+	}
+	return c
+}
 func RecordInstalledPath(paths []string, path string) []string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
 	}
-	if slices.Contains(paths, abs) {
-		return paths
+	if !slices.Contains(paths, abs) {
+		paths = append(paths, abs)
 	}
-	return append(paths, abs)
+	return paths
 }
-
-// NotifyConfig holds notification configuration for all agents.
-type NotifyConfig struct {
-	ClaudeCode AgentNotifyConfig `yaml:"claude_code"` // Claude Code 通知配置
-	Codex      AgentNotifyConfig `yaml:"codex"`       // Codex 通知配置
-	ZCode      AgentNotifyConfig `yaml:"zcode"`       // ZCode 通知配置
-	Grok       AgentNotifyConfig `yaml:"grok"`        // Grok 通知配置
-	Droid      AgentNotifyConfig `yaml:"droid"`       // Droid 通知配置
-	OpenCode   AgentNotifyConfig `yaml:"opencode"`    // OpenCode 通知配置
-	OMP        AgentNotifyConfig `yaml:"omp"`         // OMP (oh-my-pi) 通知配置
-}
-
-// All 按固定顺序返回全部 agent 的通知配置，供只读遍历使用。
-//
-// 新增 agent 时唯一需要同步的枚举点：调用方（如 freeze 解析「已配置的远程渠道」）
-// 各自手写 agent 列表时漏掉新 agent 是个已经发生过的 bug —— Droid 接入后
-// enabledRemoteFreezeChannels 仍只遍历前四个，导致只配 Droid 的用户完全冻结不了。
-// TestNotifyConfigAllCoversEveryAgent 会在字段数与此处不一致时失败。
-func (n NotifyConfig) All() []AgentNotifyConfig {
-	return []AgentNotifyConfig{n.ClaudeCode, n.Codex, n.ZCode, n.Grok, n.Droid, n.OpenCode, n.OMP}
-}
-
-// AgentNotifyConfig holds notification configuration for a single agent.
-type AgentNotifyConfig struct {
-	Events   []string       `yaml:"events,omitempty"` // 通知事件列表，如: permission_required, input_required, run_completed, run_failed
-	Channels ChannelsConfig `yaml:"channels"`         // 通知渠道配置
-}
-
-// ChannelsConfig holds configuration for notification channels.
-type ChannelsConfig struct {
-	Feishu     ChannelConfig           `yaml:"feishu"`      // 飞书通知配置
-	System     SystemChannelConfig     `yaml:"system"`      // 系统通知配置
-	Wechat     WechatChannelConfig     `yaml:"wechat"`      // 微信个人/网关 Webhook 通知配置
-	WechatWork WechatWorkChannelConfig `yaml:"wechat_work"` // 企业微信通知配置
-	DingTalk   DingTalkChannelConfig   `yaml:"dingtalk"`    // 钉钉通知配置
-	Bark       BarkChannelConfig       `yaml:"bark"`        // Bark 通知配置
-	Ntfy       NtfyChannelConfig       `yaml:"ntfy"`        // Ntfy 通知配置
-	Slack      SlackChannelConfig      `yaml:"slack"`       // Slack 通知配置
-}
-
-// ChannelConfig holds configuration for a single notification channel.
-type ChannelConfig struct {
-	Enabled bool `yaml:"enabled"` // 是否启用该通知渠道
-}
-
-const (
-	FocusPrecisionApp    = "app"
-	FocusPrecisionWindow = "window"
-)
-
-// SystemChannelConfig holds configuration for OS-native system notifications.
-type SystemChannelConfig struct {
-	Enabled      bool `yaml:"enabled"`               // 是否启用系统通知渠道
-	ClickToFocus bool `yaml:"click_to_focus"`        // 点击通知是否激活宿主应用；识别不到 BundleID 时自动降级
-	FocusDebug   bool `yaml:"focus_debug,omitempty"` // 点击聚焦探针日志开关；env AGENT_NOTIFY_FOCUS_DEBUG 可覆盖
-}
-
-// FocusPrecisionFromEnv reads AGENT_NOTIFY_FOCUS_PRECISION fresh on each call.
-// "window" (case-insensitive, trimmed) -> window; anything else / unset -> app.
-func FocusPrecisionFromEnv() string {
-	if strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_NOTIFY_FOCUS_PRECISION"))) == FocusPrecisionWindow {
-		return FocusPrecisionWindow
-	}
-	return FocusPrecisionApp
-}
-
-// EffectiveFocusDebug returns whether to enable focus debug logging. Environment variable
-// AGENT_NOTIFY_FOCUS_DEBUG set to 1/true/yes (case-insensitive) forces it on, overriding config.
-func (c SystemChannelConfig) EffectiveFocusDebug() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_NOTIFY_FOCUS_DEBUG"))) {
-	case "1", "true", "yes":
-		return true
-	}
-	return c.FocusDebug
-}
-
-// WechatChannelConfig holds configuration for personal WeChat / notify-gateway webhooks.
-// Payload: {"msgType":"text","title":"...","content":"..."}.
-type WechatChannelConfig struct {
-	Enabled    bool   `yaml:"enabled"`     // 是否启用微信通知
-	WebhookURL string `yaml:"webhook_url"` // 推送 API URL，如 https://host/api/notify/xxx
-}
-
-// WechatWorkChannelConfig holds configuration for WeChat Work (企业微信) webhook notifications.
-type WechatWorkChannelConfig struct {
-	Enabled    bool   `yaml:"enabled"`     // 是否启用企业微信通知
-	WebhookURL string `yaml:"webhook_url"` // 群机器人 Webhook URL
-}
-
-// DingTalkChannelConfig holds configuration for DingTalk (钉钉) webhook notifications.
-type DingTalkChannelConfig struct {
-	Enabled    bool   `yaml:"enabled"`     // 是否启用钉钉通知
-	WebhookURL string `yaml:"webhook_url"` // 群机器人 Webhook URL
-}
-
-// BarkChannelConfig holds configuration for Bark webhook notifications.
-type BarkChannelConfig struct {
-	Enabled    bool   `yaml:"enabled"`     // 是否启用 Bark 通知
-	WebhookURL string `yaml:"webhook_url"` // Bark 推送 URL
-}
-
-// NtfyChannelConfig holds configuration for ntfy.sh topic notifications.
-type NtfyChannelConfig struct {
-	Enabled  bool   `yaml:"enabled"`   // 是否启用 Ntfy 通知
-	TopicURL string `yaml:"topic_url"` // Ntfy topic URL, e.g. https://ntfy.sh/mytopic
-}
-
-// SlackChannelConfig holds configuration for Slack Incoming Webhook notifications.
-type SlackChannelConfig struct {
-	Enabled    bool   `yaml:"enabled"`     // 是否启用 Slack 通知
-	WebhookURL string `yaml:"webhook_url"` // Slack Incoming Webhook URL
-}
-
-// BehaviorConfig holds behavior configuration.
-type BehaviorConfig struct {
-	DedupeSeconds      int    `yaml:"dedupe_seconds"`       // 去重时间窗口（秒）；同一会话、同一内容在此时间内不重复发送，超窗口再次触发则重提醒
-	SendTimeoutSeconds int    `yaml:"send_timeout_seconds"` // 发送超时时间（秒）
-	Locale             string `yaml:"locale"`               // 语言设置，如: zh-CN, en-US
-}
-
-// currentConfigVersion 是配置结构的当前版本号。
-// 每次升版都要在 Load 里补一段对应迁移，见 migrateV1ToV2。
-const currentConfigVersion = 2
-
-func Default() Config {
-	allEvents := []string{"permission_required", "input_required", "run_completed", "run_failed"}
-	// Codex hooks 托管 SessionStart / PermissionRequest / Stop 三个事件。
-	// session_start 仅用于点击聚焦的窗口捕获，不作为通知事件，故不出现在这里。
-	codexEvents := []string{"permission_required", "run_completed"}
-	// ZCode hooks 支持的事件：与 Claude Code 基本一致，但没有 input_required
-	// （ZCode 没有 Notification 事件）。session_start 仅用于点击聚焦的窗口
-	// 捕获，不作为通知事件，故不出现在这里。
-	zcodeEvents := []string{"permission_required", "run_completed", "run_failed"}
-	// Grok hooks 支持 SessionStart / Notification / Stop / StopFailure / PostToolUseFailure。
-	// 无 PermissionRequest；授权等待通过 Notification 映射为 permission_required。
-	// session_start 同样只用于聚焦捕获，不作为通知事件。
-	grokEvents := []string{"permission_required", "input_required", "run_completed", "run_failed"}
-	// Droid hooks 支持 SessionStart / Notification / Stop。
-	// Notification 通过 notification_type 区分 permission_prompt / idle_prompt。
-	// Droid 无失败事件，故不支持 run_failed。session_start 仅用于聚焦捕获。
-	droidEvents := []string{"permission_required", "input_required", "run_completed"}
-	// OpenCode 插件订阅 session.created / permission.asked / session.status /
-	// session.idle / session.error。session_start 仅用于聚焦捕获。
-	opencodeEvents := []string{"permission_required", "input_required", "run_completed", "run_failed"}
-	// OMP Extension API: session_start / tool_approval_requested / 工具执行
-	// tool_execution_start（ask → question_asked） / session_stop。ask 工具阻塞
-	// 等用户回答 → input_required；运行成败由 session_stop 的 stop_reason 判定
-	// （error → run_failed）。
-	ompEvents := []string{"permission_required", "input_required", "run_completed", "run_failed"}
-
-	// BREAKING (vs pre-Grok defaults): Claude Code is no longer enabled by default,
-	// and System notification is no longer pre-enabled for any agent.
-	//
-	// Previously Default() set Agent.ClaudeCode.Enabled=true and
-	// Notify.ClaudeCode/ZCode/Grok Channels.System.Enabled=true. That made
-	// "view config" show unconfigured agents as ready after a single-agent setup,
-	// and channel-menu init could enable webhooks on agents the user never chose.
-	//
-	// Channels and agents now start disabled. Enabling happens only when the user
-	// runs the setup wizard or channel-menu init for agents that are already enabled.
-	// Existing ~/.agent-notify/config.yaml files are unaffected (Load preserves values).
-	// New installs must run `agent-notify` / the setup wizard once.
-	disabledChannels := func() ChannelsConfig {
-		return ChannelsConfig{
-			System:     SystemChannelConfig{Enabled: false, ClickToFocus: true},
-			Feishu:     ChannelConfig{Enabled: false},
-			Wechat:     WechatChannelConfig{Enabled: false, WebhookURL: ""},
-			WechatWork: WechatWorkChannelConfig{Enabled: false, WebhookURL: ""},
-			DingTalk:   DingTalkChannelConfig{Enabled: false, WebhookURL: ""},
-			Bark:       BarkChannelConfig{Enabled: false, WebhookURL: ""},
-			Ntfy:       NtfyChannelConfig{Enabled: false, TopicURL: ""},
-			Slack:      SlackChannelConfig{Enabled: false, WebhookURL: ""},
-		}
-	}
-
-	return Config{
-		Version: currentConfigVersion,
-		Agent: AgentConfig{
-			ClaudeCode: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-			Codex: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-			ZCode: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-			Grok: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-			Droid: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-			OpenCode: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-			OMP: AgentTargetConfig{
-				Enabled:      false,
-				InstallScope: "user",
-			},
-		},
-		Notify: NotifyConfig{
-			ClaudeCode: AgentNotifyConfig{
-				Events:   append([]string(nil), allEvents...),
-				Channels: disabledChannels(),
-			},
-			Codex: AgentNotifyConfig{
-				Events:   append([]string(nil), codexEvents...),
-				Channels: disabledChannels(),
-			},
-			ZCode: AgentNotifyConfig{
-				Events:   append([]string(nil), zcodeEvents...),
-				Channels: disabledChannels(),
-			},
-			Grok: AgentNotifyConfig{
-				Events:   append([]string(nil), grokEvents...),
-				Channels: disabledChannels(),
-			},
-			Droid: AgentNotifyConfig{
-				Events:   append([]string(nil), droidEvents...),
-				Channels: disabledChannels(),
-			},
-			OpenCode: AgentNotifyConfig{
-				Events:   append([]string(nil), opencodeEvents...),
-				Channels: disabledChannels(),
-			},
-			OMP: AgentNotifyConfig{
-				Events:   append([]string(nil), ompEvents...),
-				Channels: disabledChannels(),
-			},
-		},
-		Behavior: BehaviorConfig{
-			DedupeSeconds:      10,
-			SendTimeoutSeconds: 5,
-			Locale:             "zh-CN",
-		},
-	}
-}
-
-func DefaultPath() (string, error) {
+func dataPath(name string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".agent-notify", "config.yaml"), nil
+	return filepath.Join(home, ".agent-notify", name), nil
 }
-
-func StatePath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".agent-notify", "state.json"), nil
-}
-
-func LogPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".agent-notify", "agent-notify.log"), nil
-}
+func DefaultPath() (string, error) { return dataPath("config.yaml") }
+func StatePath() (string, error)   { return dataPath("state.json") }
+func LogPath() (string, error)     { return dataPath("agent-notify.log") }
 
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
@@ -329,105 +146,135 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-
-	// 先单独把版本号读出来：下面要把 YAML 解析进 Default()，而 Default() 自带
-	// 当前版本号，解析完就分不清原文件本来是哪个版本了。
-	var meta struct {
-		Version int `yaml:"version"`
+	c := Default()
+	if err := yaml.Unmarshal(data, &c); err != nil {
+		return Config{}, fmt.Errorf("配置 YAML 无效: %w", err)
 	}
-	if err := yaml.Unmarshal(data, &meta); err != nil {
+	if c.Version > currentConfigVersion {
+		return Config{}, fmt.Errorf("配置版本 %d 高于当前支持版本 %d", c.Version, currentConfigVersion)
+	}
+	// Existing OpenCode installations become OMO; explicit new fields win.
+	var raw struct {
+		Agent  map[string]yaml.Node
+		Notify map[string]yaml.Node
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return Config{}, err
 	}
-
-	// 解析进 Default() 而非零值结构体：YAML 里没写的字段直接保留默认值。
-	// 早先是解析进零值再手工补一串字段，补漏一个就意味着该字段的默认值在
-	// Load 与 Default 之间相反——click_to_focus 正是这么丢的（默认 true，
-	// 零值 false），新增 agent 时尤其容易漏。
-	cfg := Default()
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if _, ok := raw.Agent["omo"]; !ok {
+		if old, ok := raw.Agent["opencode"]; ok {
+			if err := old.Decode(&c.Agent.OMO); err != nil {
+				return Config{}, err
+			}
+		}
+	}
+	if _, ok := raw.Notify["omo"]; !ok {
+		if old, ok := raw.Notify["opencode"]; ok {
+			if err := old.Decode(&c.Notify.OMO); err != nil {
+				return Config{}, err
+			}
+		}
+	}
+	delete(c.Agent.Extra, "opencode")
+	delete(c.Notify.Extra, "opencode")
+	c.Version = currentConfigVersion
+	if err := c.Validate(); err != nil {
 		return Config{}, err
 	}
-
-	if meta.Version < currentConfigVersion {
-		migrateV1ToV2(&cfg)
-		cfg.Version = currentConfigVersion
+	return c, nil
+}
+func (c Config) Validate() error {
+	if c.Version != currentConfigVersion {
+		return fmt.Errorf("不支持的配置版本 %d", c.Version)
 	}
-
-	// Channel-only setup (e.g. menu → 微信) enables webhooks without writing events.
-	// Empty events mean dispatch never sends; backfill defaults when any channel is on.
-	def := Default()
-	cfg.Notify.ClaudeCode.Events = ensureEvents(cfg.Notify.ClaudeCode, def.Notify.ClaudeCode.Events)
-	cfg.Notify.Codex.Events = ensureEvents(cfg.Notify.Codex, def.Notify.Codex.Events)
-	cfg.Notify.ZCode.Events = ensureEvents(cfg.Notify.ZCode, def.Notify.ZCode.Events)
-	cfg.Notify.Grok.Events = ensureEvents(cfg.Notify.Grok, def.Notify.Grok.Events)
-	cfg.Notify.Droid.Events = ensureEvents(cfg.Notify.Droid, def.Notify.Droid.Events)
-	cfg.Notify.OpenCode.Events = ensureEvents(cfg.Notify.OpenCode, def.Notify.OpenCode.Events)
-	cfg.Notify.OMP.Events = ensureEvents(cfg.Notify.OMP, def.Notify.OMP.Events)
-
-	return cfg, nil
+	if c.Behavior.DedupeSeconds < 0 || c.Behavior.DedupeSeconds > 3600 {
+		return fmt.Errorf("dedupe_seconds 必须在 0–3600 之间")
+	}
+	if c.Behavior.SendTimeoutSeconds < 1 || c.Behavior.SendTimeoutSeconds > 60 {
+		return fmt.Errorf("send_timeout_seconds 必须在 1–60 之间")
+	}
+	for _, id := range Agents {
+		a, n, _ := c.Target(id)
+		if a.InstallScope != "user" && a.InstallScope != "project" {
+			return fmt.Errorf("%s install_scope 必须为 user 或 project", id)
+		}
+		for _, event := range n.Events {
+			if !slices.Contains(Events(id), event) {
+				return fmt.Errorf("%s 不支持事件 %q", id, event)
+			}
+		}
+		if n.Channels.WechatWork.Enabled {
+			if err := ValidateWebhook(n.Channels.WechatWork.WebhookURL); err != nil {
+				return fmt.Errorf("%s: %w", id, err)
+			}
+		}
+	}
+	return nil
 }
 
-// migrateV1ToV2 把 v1 配置里被错误固化的 click_to_focus: false 翻回 true。
-//
-// v1 的 Load 把 YAML 解析进零值结构体，于是 YAML 里没写 click_to_focus 的 agent
-// 段拿到 Go 零值 false，而 Default() 给的是 true。任何在某个 agent 支持上线之前
-// 就已存在的配置，都会在向导下次保存时把这个 false 固化到磁盘——OpenCode 用户
-// 因此普遍点不动通知。
-//
-// 代价是明知的：真的手动关过该开关的人会被重新打开一次。v1 的 bool 存不下
-// 「没写」与「写了 false」的差别，只能二选一，这里选让绝大多数人可用。
-func migrateV1ToV2(cfg *Config) {
-	for _, system := range []*SystemChannelConfig{
-		&cfg.Notify.ClaudeCode.Channels.System,
-		&cfg.Notify.Codex.Channels.System,
-		&cfg.Notify.ZCode.Channels.System,
-		&cfg.Notify.Grok.Channels.System,
-		&cfg.Notify.Droid.Channels.System,
-		&cfg.Notify.OpenCode.Channels.System,
-	} {
-		system.ClickToFocus = true
+// URL values are never interpolated into validation errors because query strings contain secrets.
+// HTTP is accepted only for loopback test servers.
+func ValidateWebhook(value string) error {
+	u, err := url.Parse(value)
+	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" {
+		return fmt.Errorf("企业微信 Webhook URL 无效")
 	}
-}
-
-// ensureEvents keeps existing events. When channels are enabled but events were never
-// persisted (common after channel-menu-only setup), fill agent-specific defaults.
-func ensureEvents(notifyCfg AgentNotifyConfig, defaults []string) []string {
-	if len(notifyCfg.Events) > 0 {
-		return notifyCfg.Events
+	if u.Scheme == "https" && u.Hostname() == "qyapi.weixin.qq.com" && u.Path == "/cgi-bin/webhook/send" && u.Query().Get("key") != "" {
+		return nil
 	}
-	if !anyChannelEnabled(notifyCfg.Channels) {
-		return notifyCfg.Events
+	if u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1") {
+		return nil
 	}
-	return append([]string(nil), defaults...)
+	return fmt.Errorf("请填写企业微信群机器人 HTTPS Webhook（qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…）")
 }
-
-func anyChannelEnabled(c ChannelsConfig) bool {
-	return c.System.Enabled ||
-		c.Feishu.Enabled ||
-		c.Wechat.Enabled ||
-		c.WechatWork.Enabled ||
-		c.DingTalk.Enabled ||
-		c.Bark.Enabled ||
-		c.Ntfy.Enabled ||
-		c.Slack.Enabled
-}
-
-func Save(path string, cfg Config) error {
-	// Config holds webhook URLs and other secrets — keep the directory and file
-	// owner-only (issue #20).
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+func Save(path string, c Config) error {
+	if err := c.Validate(); err != nil {
 		return err
 	}
-
-	data, err := yaml.Marshal(cfg)
+	data, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
-
-	// WriteFile's permission bits only apply on create. Chmod after write so an
-	// existing 0644 config is tightened on the next Save.
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o600)
+	if err := common.WriteFileAtomicWithBackup(path, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
+}
+
+// Redacted is the safe representation for terminals and diagnostics, including legacy fields.
+func (c Config) Redacted() ([]byte, error) {
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, err
+	}
+	var walk func(*yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i < len(n.Content); i += 2 {
+				key, val := n.Content[i], n.Content[i+1]
+				k := strings.ToLower(key.Value)
+				if strings.Contains(k, "url") || strings.Contains(k, "token") || strings.Contains(k, "secret") || strings.Contains(k, "key") {
+					if val.Kind == yaml.ScalarNode && val.Value != "" {
+						val.Value = "[已隐藏]"
+						val.Tag = "!!str"
+					}
+				} else {
+					walk(val)
+				}
+			}
+		} else {
+			for _, child := range n.Content {
+				walk(child)
+			}
+		}
+	}
+	walk(&node)
+	return yaml.Marshal(&node)
 }

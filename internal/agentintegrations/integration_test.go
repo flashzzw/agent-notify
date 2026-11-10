@@ -3,6 +3,7 @@ package agentintegrations
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -86,6 +87,25 @@ func TestCodexIntegration_SettingsPath(t *testing.T) {
 			t.Error("SettingsPath(invalid) expected error, got nil")
 		}
 	})
+}
+
+func TestOMOIntegrationUsesSenpiExtensionDirectory(t *testing.T) {
+	t.Setenv("OMO_CODING_AGENT_DIR", filepath.Join(t.TempDir(), "omo-agent"))
+	o := NewOpenCodeIntegration()
+	path, err := o.SettingsPath("user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(path), "/omo-agent/extensions/agent-notify.ts") {
+		t.Fatalf("SettingsPath(user) = %q, want Senpi extension path", path)
+	}
+	project, err := o.SettingsPath("project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project != filepath.Join(".senpi", "extensions", "agent-notify.ts") {
+		t.Fatalf("SettingsPath(project) = %q, want .senpi extension path", project)
+	}
 }
 
 func TestClaudeIntegration_Install(t *testing.T) {
@@ -192,7 +212,7 @@ func TestCodexIntegration_Install(t *testing.T) {
 
 		content := string(data)
 		// user content preserved, our hooks added
-		if !containsAll(content, `"someUserKey"`, `"SessionStart"`, `"PermissionRequest"`, `"Stop"`, `handle-codex-hook`) {
+		if !containsAll(content, `"someUserKey"`, `"PermissionRequest"`, `"Stop"`, `handle-codex-hook`) {
 			t.Errorf("hooks.json missing expected keys, got:\n%s", content)
 		}
 	})

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 const freezeFileName = "freeze.json"

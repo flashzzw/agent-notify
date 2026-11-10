@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/hellolib/agent-notify/internal/common"
-	"github.com/hellolib/agent-notify/internal/notify"
+	"github.com/flashzzw/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/notify"
 )
 
 // payload 描述 Codex hooks 通过 stdin 投递的事件 JSON。
@@ -32,7 +32,7 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 
 	switch p.HookEventName {
 	case "SessionStart":
-		// 仅供点击聚焦捕获窗口用；Dispatch 会拦截、不发通知。
+		// 兼容旧版 SessionStart 事件；当前首期 Dispatch 会忽略它。
 		return notify.Message{
 			Agent:     "codex",
 			Event:     "session_start",

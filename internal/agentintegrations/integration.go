@@ -16,7 +16,7 @@ type Integration interface {
 
 	// Install configures the agent to use agent-notify by modifying its
 	// settings file at settingsPath with the given binaryPath
-	Install(settingsPath, binaryPath string) error
+	Install(settingsPath, binaryPath string, configPath ...string) error
 
 	// Uninstall removes only the hook entries written by agent-notify from
 	// the settings file at settingsPath. Other hooks defined by the user are

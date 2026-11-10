@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hellolib/agent-notify/internal/agenthooks"
-	"github.com/hellolib/agent-notify/internal/config"
-	"github.com/hellolib/agent-notify/internal/state"
+	"github.com/flashzzw/agent-notify/internal/agenthooks"
+	"github.com/flashzzw/agent-notify/internal/config"
+	"github.com/flashzzw/agent-notify/internal/state"
 )
 
 func Handle(ctx context.Context, cfg config.Config, statePath, logPath string, stdin io.Reader) error {

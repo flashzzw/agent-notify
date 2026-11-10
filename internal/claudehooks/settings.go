@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 // hookCommandMarker 用于识别本插件写入的 hook。
@@ -12,10 +12,8 @@ import (
 const hookCommandMarker = "handle-claude-hook"
 
 // managedEvents 是本插件托管的 Claude Code 事件列表。
-// SessionStart 仅用于 Linux 点击聚焦的窗口捕获（见 agenthooks.Dispatch），
-// 不产生任何通知；其它平台收到即 no-op。
+// 旧版配置可能仍包含 SessionStart；当前首期安装不再订阅它。
 var managedEvents = []string{
-	"SessionStart",
 	"PermissionRequest",
 	"Notification",
 	"Stop",
@@ -48,17 +46,20 @@ func BuildHookSettings(binaryPath string) map[string]any {
 
 // Install 以增量方式写入 hooks：若某事件下已存在 agent-notify 的 hook 则跳过，
 // 不覆盖用户自己挂载的其他 hook。
-func Install(path string, binaryPath string) error {
+func Install(path string, binaryPath string, configPath ...string) error {
 	settings, err := common.ReadOrderedSettings(path)
 	if err != nil {
 		return err
 	}
 
 	binaryPath = common.ResolveBinaryPath(binaryPath)
-	command := common.QuotePathForShell(binaryPath) + " " + hookCommandMarker
+	command := common.QuotePathForShell(binaryPath) + " " + hookCommandMarker + common.ConfigArgument(configPath)
 
 	hooks, err := common.ChildObject(settings, "hooks")
 	if err != nil {
+		return err
+	}
+	if err := common.RemoveManagedEvent(&hooks, "SessionStart", hookCommandMarker); err != nil {
 		return err
 	}
 	if err := common.InstallManagedHooks(&hooks, managedEvents, hookCommandMarker, command,

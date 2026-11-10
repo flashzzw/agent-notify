@@ -8,7 +8,7 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 // EnableHooksFeature 确保 config.toml 中 [features] hooks = true,

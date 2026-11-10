@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hellolib/agent-notify/internal/cli"
+	"github.com/flashzzw/agent-notify/internal/cli"
 )
 
 func main() {

@@ -115,6 +115,23 @@ func TestWechatWorkSenderSendAPIError(t *testing.T) {
 	}
 }
 
+func TestWechatWorkRejectsMalformedSuccessAndRedactsTransportURL(t *testing.T) {
+	for _, body := range []string{"not-json", `{}`, `{"errcode":null}`} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+		err := NewWechatWorkSender(srv.URL+"?key=secret-value").Send(context.Background(), Message{Title: "test"})
+		srv.Close()
+		if err == nil {
+			t.Fatalf("accepted malformed response: %s", body)
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv.Close()
+	err := NewWechatWorkSender(srv.URL+"?key=secret-value").Send(context.Background(), Message{})
+	if err == nil || strings.Contains(err.Error(), "secret-value") {
+		t.Fatalf("transport error leaked secret: %v", err)
+	}
+}
+
 func TestBuildWechatMarkdownContainsBody(t *testing.T) {
 	s := NewWechatWorkSender("https://example.com")
 	msg := Message{

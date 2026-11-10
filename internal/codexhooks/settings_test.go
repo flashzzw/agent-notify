@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 func TestBuildHookSettings_RegistersManagedEvents(t *testing.T) {
@@ -18,7 +18,7 @@ func TestBuildHookSettings_RegistersManagedEvents(t *testing.T) {
 		t.Fatalf("hooks type = %T, want map[string]any", got["hooks"])
 	}
 
-	for _, event := range []string{"SessionStart", "PermissionRequest", "Stop"} {
+	for _, event := range []string{"PermissionRequest", "Stop"} {
 		items, ok := hooks[event].([]map[string]any)
 		if !ok || len(items) != 1 {
 			t.Fatalf("%s entries missing or invalid: %v", event, hooks[event])
@@ -69,7 +69,7 @@ func TestInstall_MergesExistingHooks(t *testing.T) {
 	if !ok {
 		t.Fatal("hooks key missing or wrong type")
 	}
-	for _, key := range []string{"SessionStart", "PermissionRequest", "Stop"} {
+	for _, key := range []string{"PermissionRequest", "Stop"} {
 		if _, exists := hooks[key]; !exists {
 			t.Fatalf("hooks missing key %q after install", key)
 		}

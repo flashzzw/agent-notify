@@ -1,176 +1,106 @@
-<div align="center">
-
-<img src="assist/brand/bell-only-128.png" alt="Agent Notify" width="90">
+<p align="center"><img src="docs/assets/logo.svg" width="88" alt="Agent Notify bell"></p>
 
 # Agent Notify
 
-<p align="center"><b>Notifies you when your agent needs you</b>
+**Know when your coding agent needs you.** Send approval requests, input prompts, completions and failures to Windows notifications or a WeCom (WeChat Work) group bot.
 
-[![Go Version](https://img.shields.io/badge/Go-%3E%3D1.25-blue.svg)](https://go.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/hellolib/agent-notify.svg)](https://github.com/hellolib/agent-notify/releases)
+[简体中文](README.zh-CN.md) · [Downloads](https://github.com/flashzzw/agent-notify/releases/latest) · [Report a bug](https://github.com/flashzzw/agent-notify/issues)
 
-<p align="center"><b>English</b> | <a href="README.zh-CN.md">简体中文</a></p>
+[![Test](https://github.com/flashzzw/agent-notify/actions/workflows/test.yml/badge.svg)](https://github.com/flashzzw/agent-notify/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-</div>
+This edition supports **Claude Code, Codex, and Senpi-based Oh My OpenCode (OMO)** on **Windows and WSL**. Each agent can independently enable desktop notifications, WeCom, or both. The command-line wizard currently uses Chinese labels.
 
-## Overview
+## Install
 
-Agent Notify hooks into the lifecycle events of AI coding agents (Claude Code, Codex, OpenCode, ZCode, Grok, Droid, OMP/oh-my-pi, etc.) and pushes them to your phone and desktop. Get notified the moment your agent needs permission, finishes a task, or fails — so you never have to babysit a running agent.
+Download an archive from [Releases](https://github.com/flashzzw/agent-notify/releases/latest). Most Intel/AMD computers use `amd64`; ARM devices use `arm64`.
 
-Supported delivery channels: **OS-native system notifications**, **Feishu/Lark**, **WeChat Work (企业微信)**, **DingTalk (钉钉)**, **Bark (iOS)**, and **ntfy**.
+| Where the agent runs | Archive |
+| --- | --- |
+| Native Windows 10/11 | `agent-notify-<version>-windows-amd64.zip` or `windows-arm64.zip` |
+| WSL | `agent-notify-<version>-linux-amd64.tar.gz` or `linux-arm64.tar.gz` |
 
-<p align="center">
-  <img src="assist/demo.gif" alt="Agent Notify demo" width="800">
-</p>
+Extract to a permanent directory. The archive contains `agent-notify.exe` (Windows) or `agent-notify` (WSL), documentation and the MIT license. No Go or separate Node.js installation is required to run the notifier. Your coding agent still needs its own runtime.
 
-## Quick Start
+Windows PowerShell, from the extracted directory:
 
-Run it without installing anything:
-
-```bash
-npx agent-notify@latest
+```powershell
+.gent-notify.exe
 ```
 
-Or install it globally, which puts the `agent-notify` command on your `PATH`:
+WSL, from the extracted directory:
 
 ```bash
-npm install -g agent-notify
-agent-notify
+chmod +x agent-notify
+./agent-notify
 ```
 
-Update a global install later:
+The wizard selects an agent, installation scope, channels and events. Choose **当前用户** (current user) for the usual setup. Repeat for each agent. Add the directory to `PATH` to use the commands below from anywhere; otherwise use `./agent-notify` or `.gent-notify.exe`.
+
+WSL desktop notifications require Windows interoperability and access to `powershell.exe`. Plain Linux has no desktop channel in this edition. Release binaries are unsigned; `SHA256SUMS` is provided for download integrity checks.
+
+## Quick start
+
+For desktop notifications:
 
 ```bash
-npm update -g agent-notify
+agent-notify install --agent claude --channels system
+agent-notify test system --agent claude
+agent-notify doctor
 ```
 
-Both routes run the same launcher: it downloads the platform binary into `~/.agent-notify/` on first run, so the npm package itself is only a bootstrap. The launcher updates the binary to the version of the **npm package it was invoked from**, never to whatever is newest — so keep that package current: `npx agent-notify@latest` re-resolves from the registry on every run, while a global install only moves when you run `npm update -g agent-notify`. The global install is the better fit if you plan to call `agent-notify` directly — `agent-notify doctor`, `agent-notify send`, `agent-notify freeze` — rather than going through `npx` every time. Pin a version with `npm install -g agent-notify@0.17.0`.
-
-You can also send a custom message directly through a configured channel:
+Replace `claude` with `codex` or `omo`. For WeCom, create a group bot and paste its webhook into the wizard's hidden input. Automation can supply `AGENT_NOTIFY_WECOM_WEBHOOK` before `install`:
 
 ```bash
-agent-notify send --channel wechat-work --agent omp "Deployment finished; please check the service"
-agent-notify send --channel ntfy --agent omp --title "Build result" --message "Build succeeded"
+agent-notify install --agent claude --channels system,wechat-work
+agent-notify test wechat-work --agent claude
 ```
 
-`send` reads the selected agent's channel configuration and sends explicitly, regardless of that channel's `enabled` flag or event subscription list. Supported channels are `system`, `feishu`, `wechat`, `wechat-work`, `dingtalk`, `bark`, `ntfy`, and `slack`.
+The environment variable is read during setup and saved to the local configuration; hooks subsequently read that saved value. Inject it through your secret manager or a hidden prompt. Typing a literal secret into an environment assignment can still save it in shell history.
 
+## Integrations
 
+| Agent (`--agent`) | Default user integration | Events |
+| --- | --- | --- |
+| Claude Code (`claude`) | `~/.claude/settings.json` | permission, input, completed, failed |
+| Codex (`codex`) | `~/.codex/hooks.json` and the hooks feature in `config.toml` | permission, completed |
+| OMO / Senpi (`omo`) | `~/.omo/agent/extensions/agent-notify.ts` when that agent directory exists; otherwise `~/.senpi/agent/extensions/agent-notify.ts` | permission, input, completed, failed |
 
-## Features
+This OMO integration targets the Senpi extension interface (`agent_settled` and `herdr:blocked`). It does not install the older OpenCode plugin. Restart Codex after installation and run `/hooks` to review and trust hook changes. In OMO, run `/reload` or restart to load the extension. See [configuration and troubleshooting](docs/usage.md) for custom directories, project scope and event names.
 
-### Supported Channels
+## Daily use
 
-| Channel | Description | Setup   |
-|:--------|------|---------|
-| 🖥️ System Notification | Native notifications on macOS, Linux, and Windows | Default |
-| <img src="assist/logo/feishu.png" width="24" align="absmiddle"> Feishu / Lark | One-click QR-code binding; push via Feishu bot messages | QR scan |
-| <img src="assist/logo/qiyeweixin.png" width="24" align="absmiddle"> WeChat Work | Push notifications via a WeChat Work group bot webhook | Webhook |
-| <img src="assist/logo/dingding.png" width="24" align="absmiddle"> DingTalk | Push notifications via a DingTalk group bot webhook | Webhook |
-| <img src="assist/logo/bark.png" width="24" align="absmiddle"> Bark | Push to iOS devices via a Bark webhook URL | Webhook |
-| <img src="assist/logo/ntfy.png" width="24" align="absmiddle"> ntfy | Push via ntfy.sh or self-hosted ntfy server | Topic |
-| <img src="assist/logo/slack.png" width="24" align="absmiddle"> Slack | Push via Slack Incoming Webhook | Webhook |
-| <img src="assist/logo/discord.png" width="24" align="absmiddle"> Discord | Push via Discord channel webhook | 🚧 Webhook |
-| <img src="assist/logo/telegram.png" width="24" align="absmiddle"> Telegram | Push via Telegram Bot API | 🚧 Bot token |
+```bash
+agent-notify config show                 # Redacts webhook values
+agent-notify disable --agent codex
+agent-notify enable --agent codex
+agent-notify freeze --for 30m            # Pause WeCom; desktop notifications continue
+agent-notify unfreeze
+agent-notify uninstall --agent claude    # Preserve other hooks and notification config
+agent-notify --help
+```
 
-### Supported Events
+Settings live in `~/.agent-notify/config.yaml` (`%USERPROFILE%\.agent-notify\config.yaml` on Windows). Use `--config <path>` or `AGENT_NOTIFY_CONFIG` to select a different file. The same directory holds state, logs and configuration backups.
 
-| Event | Claude Code | Codex | OpenCode | ZCode | Grok | Droid | OMP |
-|------|:---:|:---:|:---:|:---:|:----:|:---:|:---:|
-| `permission_required` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
-| `input_required` | ✅ | — | ✅ | — | ✅ | ✅ | ✅ |
-| `run_completed` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `run_failed` | ✅ | — | ✅ | ✅ | ✅ | — | ✅ |
+Hooks contain the absolute executable path. After moving or updating the install directory, rerun `install` or the wizard. Hook errors are logged and return successfully to the agent; sends have timeouts and deduplication. Notifications are one-way reminders without terminal focus on click.
 
-Notes:
+## Privacy
 
-- Claude Code subscribes via hooks in `~/.claude/settings.json`: `PermissionRequest`, `Notification`, `Stop`, `PostToolUseFailure`, and `SessionStart`.
-- Codex subscribes via `~/.codex/hooks.json`: `PermissionRequest` and `Stop` (mapped to `permission_required` / `run_completed`), plus `SessionStart`. `input_required` and `run_failed` have no corresponding Codex hook yet, so they are not supported.
-- OpenCode uses a JS plugin instead of native hooks: the plugin is written to `~/.agent-notify/opencode-plugin.js` (binary path baked into JS), and its path is registered in `~/.config/opencode/opencode.json` (user) or `./opencode.json` (project) `plugin` array. The plugin subscribes to `session.created`→`session_start`, `permission.asked`→`permission_required`, `question.asked`→`input_required`, `session.status`(idle)→`input_required`, `session.idle`→`run_completed`, `session.error`→`run_failed`.
-- ZCode subscribes via `~/.zcode/cli/config.json`: `SessionStart`, `PermissionRequest`, `PostToolUseFailure`, and `Stop`, mapped to `permission_required`, `run_failed`, and `run_completed`. ZCode has no `Notification` event (so no `input_required`), and its hook schema is strict — an unknown event name will cause the whole hooks config to be silently dropped.
-- Grok subscribes via `~/.grok/hooks/agent-notify.json`: `SessionStart`, `Notification`, `Stop`, `StopFailure`, and `PostToolUseFailure`. There is no dedicated `PermissionRequest` event; `Notification`s with permission/approval semantics map to `permission_required` (marked *), others map to `input_required`. `StopFailure` / `PostToolUseFailure` map to `run_failed`.
-- Droid subscribes via `~/.factory/hooks.json`: `SessionStart`, `Notification`, `Stop`, mapped to `session_start` / `permission_required`|`input_required` / `run_completed`. Droid has no failure event, so `run_failed` is not supported. `session_start` is only used for click-to-focus window capture, not as a notification event.
-- OMP uses a native TypeScript extension instead of a JSON command hook: user scope writes `~/.omp/agent/extensions/agent-notify.ts`, while project scope writes `.omp/extensions/agent-notify.ts`. It listens to `session_start`, `tool_approval_requested`, `tool_execution_start`, and `session_stop`, mapping them to focus capture, `permission_required`, `input_required`, and `run_completed`/`run_failed`. The `ask` tool blocks the session waiting for an answer, so its `tool_execution_start` is mapped to `input_required`. A run is judged by `session_stop`'s stop reason: `stop_reason: "error"` (or an aborted stop with an error message) maps to `run_failed`; ordinary per-tool errors are not treated as run failures. `permission_required` is emitted only when OMP actually requests tool approval.
-- OMP respects `OMP_PROFILE` / `PI_PROFILE` profiles and the `PI_CODING_AGENT_DIR` override.
-- **`SessionStart` does not produce a notification.** It is subscribed on every agent solely to capture the terminal window at session start, which powers Linux window-level [Click-to-Focus](#click-to-focus). On macOS/Windows the SessionStart hook is a no-op.
+WeCom receives the notification's event, message and, where present, workspace information. Agent messages can contain code or private project details. Local configuration and backups contain the webhook secret; keep them private. See [SECURITY.md](https://github.com/flashzzw/agent-notify/blob/main/SECURITY.md) before sharing logs or configuration.
 
-### Supported Platforms
+## Development
 
-| Platform | Architecture | Status |
-|:---:|:---:|:---:|
-| macOS | amd64 / arm64 | ✅ |
-| Linux | amd64 / arm64 | ✅ |
-| Windows | amd64 / arm64 | ✅ |
+Use Go 1.25 or newer. Node.js 22 or newer runs the Senpi extension contract test; without Node that test is skipped. Python 3 and Make are needed for `make package`.
 
-### Click-to-Focus
+```bash
+make test
+make vet
+make build
+make package VERSION=v0.1.0
+```
 
-System notifications are clickable — clicking one brings you back to the terminal / window where the agent is running. Behavior differs by platform:
+The binary goes to `bin/`; release archives and `SHA256SUMS` go to `dist/`. Native Windows users can run `go test ./...`, `go vet ./...`, `go build -o bin/agent-notify.exe ./cmd/agent-notify` and `python scripts/package.py --version v0.1.0` directly. See [CONTRIBUTING.md](https://github.com/flashzzw/agent-notify/blob/main/CONTRIBUTING.md).
 
-- **macOS** — App-level by default (activates the agent's terminal/IDE app). For window-level focus (return to the exact window even when several are open), set `AGENT_NOTIFY_FOCUS_PRECISION=window` in your login shell environment (e.g. `~/.zshrc`); this uses a bundled helper and requires Accessibility permission. Unset stays app-level.
-- **Linux (X11)** — Window-level. The exact terminal window is captured at session start (via the `SessionStart` hook) and re-focused on click, so it distinguishes sibling windows of single-process terminals (deepin-terminal, GNOME Terminal, etc.). Native Wayland windows can't be targeted.
-- **Windows** — Returns to the terminal window via a bundled helper.
+## License and origin
 
-> **`AGENT_NOTIFY_FOCUS_PRECISION`** accepts `window` (window-level) or `app` (app-level — the default). Values are case-insensitive and whitespace-trimmed; anything unset or unrecognized falls back to `app`. This variable **only affects macOS** — Linux is always window-level, and Windows uses its own helper.
-
-Click-to-focus is enabled by default for the System channel; the target app/window is detected automatically from the hook's environment and process tree.
-
-
-
-
-## Configuration
-
-On first run, the launcher downloads the platform-specific binary matching the current npm package version from GitHub Releases and installs it to:
-
-- macOS / Linux: `~/.agent-notify/agent-notify`
-- Windows: `~/.agent-notify/agent-notify.exe`
-
-On every subsequent run it checks the local binary version against the version of the npm package the launcher ran from: it downloads if missing, updates if it differs, and otherwise runs directly. Invoke with `npx agent-notify@latest` (or run `npm update -g agent-notify`) to move to a new release. The launcher never persistently modifies `PATH` — it always executes via an absolute path.
-
-> **Note**: Codex integrates through the official hooks system in `~/.codex/hooks.json` and currently subscribes only to `PermissionRequest` and `Stop`. After first install, run `/hooks` inside Codex to complete the trust review.
->
-> **Grok**: Writes `~/.grok/hooks/agent-notify.json`. Global hooks are always trusted; project hooks (`.grok/hooks/`) require `/hooks-trust` or `--trust`. After install, run `/hooks` (or `Ctrl+L`) inside Grok to confirm they loaded.
-
-
-> You don't need to edit config files by hand — this section is for reference only.
-
-Agent Notify's own config lives at `~/.agent-notify/config.yaml`. **New installs start with all agents and channels disabled** — run `npx agent-notify@latest` (setup wizard) once to enable the agents and channels you want. This avoids showing unconfigured agents as ready in view/doctor after a partial setup. Existing config files are left unchanged.
-
-Agent integration config locations:
-
-- Claude Code: `~/.claude/settings.json` (writes hooks → command `agent-notify handle-claude-hook`)
-- Codex: `~/.codex/hooks.json` (writes hooks → command `agent-notify handle-codex-hook`; run `/hooks` inside Codex to complete trust)
-- OpenCode: `~/.config/opencode/opencode.json` (writes `plugin` array → `~/.agent-notify/opencode-plugin.js`, command `agent-notify handle-opencode-hook`; project scope uses `./opencode.json`)
-- ZCode: `~/.zcode/cli/config.json` (writes `hooks.events.<Event>` + `hooks.enabled` → command `agent-notify handle-zcode-hook`; restart ZCode for the config to take effect)
-- Grok: `~/.grok/hooks/agent-notify.json` (writes hooks → command `agent-notify handle-grok-hook`; project scope uses `.grok/hooks/agent-notify.json`)
-- Droid: `~/.factory/hooks.json` (writes hooks → command `agent-notify handle-droid-hook`; project scope uses `.factory/hooks.json`)
-- OMP: `~/.omp/agent/extensions/agent-notify.ts` (writes a native TypeScript extension; project scope uses `.omp/extensions/agent-notify.ts`)
-
-### WeChat Work Bot Binding Tip
-
-1. **Create a single-person notification group**: start a group chat in WeChat Work (pull in a few colleagues). After it's created, **do not post anything**, then remove the others — the group becomes your personal notification channel.
-2. **Add a bot**: "Group Settings" → "Message Push" → "Add" → "Custom Message Push", name it and save.
-3. **Get the webhook URL**: copy the generated URL, which looks like `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx`.
-4. **Bind it**: run `npx agent-notify@latest`, enable the WeChat Work channel in the setup wizard, and paste the webhook URL.
-> Older WeChat Work versions: "Group Settings" → "Group Bots" → "Add Bot" → "New Bot", name it and save.
-
-
-<p align="center">
-  <img src="assist/workflow.png" alt="Workflow diagram" />
-</p>
-
-## Screenshots
-
-| | |
-|:---:|:---:|
-| <img src="assist/launch-setting.png" alt="Setup" width="75%"> | <img src="assist/feishu-bind.png" alt="Feishu binding" width="75%"> |
-| **Setup** | **Feishu Binding** |
-| <img src="assist/feishu-notify-phone.png" alt="Feishu notification" width="55%"> | <img src="assist/wecom-notify.jpg" alt="WeChat Work notification" width="55%"> |
-| **Feishu Notification** | **WeChat Work Notification** |
-| <img src="assist/system-notify.png" alt="System notification" width="55%"> | |
-| **System Notification** | |
-
-
-## Acknowledgments
-
-Thanks for the support and feedback from the friends at [LINUX DO](https://linux.do/).
+[MIT](LICENSE). Derived from [hellolib/agent-notify](https://github.com/hellolib/agent-notify), with the original copyright and Git history preserved. This repository maintains its own Windows/WSL-focused edition and release series. Upstream npm packages and releases are separate from this edition.

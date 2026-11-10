@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/hellolib/agent-notify/internal/codexhooks"
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/codexhooks"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 // CodexIntegration implements Integration for Codex.
@@ -35,6 +35,9 @@ func (c *CodexIntegration) DetectInstalled() bool {
 func (c *CodexIntegration) SettingsPath(scope string) (string, error) {
 	switch scope {
 	case "user":
+		if dir := os.Getenv("CODEX_HOME"); dir != "" {
+			return filepath.Join(dir, "hooks.json"), nil
+		}
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
@@ -49,8 +52,8 @@ func (c *CodexIntegration) SettingsPath(scope string) (string, error) {
 
 // Install 写入 Codex hooks.json，订阅 PermissionRequest 与 Stop 事件。
 // 已存在 agent-notify hook 的事件会被跳过；用户挂载的其他 hook 原样保留。
-func (c *CodexIntegration) Install(settingsPath, binaryPath string) error {
-	return codexhooks.Install(settingsPath, common.ResolveBinaryPath(binaryPath))
+func (c *CodexIntegration) Install(settingsPath, binaryPath string, configPath ...string) error {
+	return codexhooks.Install(settingsPath, common.ResolveBinaryPath(binaryPath), configPath...)
 }
 
 // Uninstall removes only the hook entries written by agent-notify from

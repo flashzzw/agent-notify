@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hellolib/agent-notify/internal/common"
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 func TestBuildHookSettings(t *testing.T) {

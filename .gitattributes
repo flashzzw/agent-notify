@@ -1,5 +1,8 @@
-# 内嵌进二进制的文本资源必须跨平台字节一致：
-# Windows runner 默认 core.autocrlf=true 会把 LF 转成 CRLF，导致
-# go:embed 的内容随平台变化、字节比对（bytes.Equal）失配、
-# 以及锚定行尾的正则（见 binaryConstRe）失配。强制 LF。
-internal/opencodehooks/plugin/opencode.js text eol=lf
+* text=auto
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.py text eol=lf
+Makefile text eol=lf

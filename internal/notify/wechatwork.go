@@ -53,7 +53,9 @@ func (s *WechatWorkSender) Send(ctx context.Context, msg Message) error {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("wechat-work: send request: %w", err)
+		// The webhook contains the bot secret in its query string. Never include
+		// the URL or the wrapped transport error in a user-facing error.
+		return fmt.Errorf("wechat-work: send request failed")
 	}
 	defer resp.Body.Close()
 
@@ -64,11 +66,17 @@ func (s *WechatWorkSender) Send(ctx context.Context, msg Message) error {
 
 	// Parse response to check errcode
 	var result struct {
-		ErrCode int    `json:"errcode"`
+		ErrCode *int   `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.ErrCode != 0 {
-		return fmt.Errorf("wechat-work: api error code=%d msg=%s", result.ErrCode, result.ErrMsg)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("wechat-work: invalid API response")
+	}
+	if result.ErrCode == nil {
+		return fmt.Errorf("wechat-work: invalid API response")
+	}
+	if *result.ErrCode != 0 {
+		return fmt.Errorf("wechat-work: api error code=%d msg=%s", *result.ErrCode, result.ErrMsg)
 	}
 
 	return nil
