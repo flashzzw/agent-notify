@@ -128,6 +128,10 @@ func eventEmoji(event string) string {
 		return "✅"
 	case "run_failed":
 		return "❌"
+	case "run_interrupted":
+		return "🛑"
+	case "subagent_completed":
+		return "🤖"
 	default:
 		return "🔔"
 	}

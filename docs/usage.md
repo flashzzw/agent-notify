@@ -16,15 +16,19 @@ Project scope writes `.claude/settings.json`, `.codex/hooks.json` (and `config.t
 
 可用事件 / Event names:
 
-| Event | 含义 | Agent |
-| --- | --- | --- |
-| `permission_required` | 等待授权 / Approval needed | Claude, Codex, OMO |
-| `input_required` | 等待输入 / Input needed | Claude, OMO |
-| `run_completed` | 任务完成 / Completed | Claude, Codex, OMO |
-| `run_failed` | 运行失败 / Failed | Claude, OMO |
+| Event | 含义 | Agent | 默认订阅 / Default |
+| --- | --- | --- | --- |
+| `permission_required` | 等待授权 / Approval needed | Claude, Codex, OMO | 是 / Yes |
+| `input_required` | 等待输入 / Input needed | Claude, OMO | 是 / Yes |
+| `run_completed` | 任务完成 / Completed | Claude, Codex, OMO | 是 / Yes |
+| `run_failed` | 运行失败 / Failed | Claude, OMO | 是 / Yes |
+| `run_interrupted` | 运行中断 / Interrupted by the user | Codex, OMO | 否 / No |
+| `subagent_completed` | 子代理完成 / Subagent finished | Claude, Codex, OMO | 否 / No |
+
+`run_interrupted` / `subagent_completed` 为 v0.2 新增事件，默认不订阅：升级或全新安装都不会自动开启，需要显式勾选或通过 `--events` 指定。`run_interrupted` 在 Codex 来自 `Interrupt` hook（用户 ESC 中断），在 OMO 来自主会话 `aborted`；`subagent_completed` 来自 Claude Code / Codex 的 `SubagentStop` hook 与 OMO 的 worker 会话完成。Claude Code 没有 Interrupt 类 hook，因此不提供 `run_interrupted`。
 
 ```bash
-agent-notify install --agent claude --channels system --events permission_required,run_completed
+agent-notify install --agent claude --channels system --events permission_required,run_completed,subagent_completed
 ```
 
 `--channels` 和 `--events` 会替换对应 Agent 当前的选择；省略时沿用现有配置。Defaults for a new configuration subscribe to all events supported by that agent; channels must be selected explicitly.
@@ -43,7 +47,29 @@ agent-notify install --agent claude --channels system --events permission_requir
 
 缺失的项目、工作目录或会话字段会省略；消息总长度限制为 2048 UTF-8 字节，超长正文保留开头并以 `…` 结束。WeCom uses plain text, omits unavailable metadata, and truncates long content without splitting a Unicode character.
 
-Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，顶部来源名称旁显示对应小图标，正文不显示大 logo。OMO 图标由 `assets/omo-icon-light.svg` 转为 PNG 后内置。各自使用独立的通知身份，可在 Windows「设置 → 系统 → 通知」中分别控制。图标内置于程序，首次使用时写入 `%LOCALAPPDATA%\AgentNotify\icons`；WSL 也写入此 Windows 本地目录，无需保留旧版工具或单独安装图片。
+Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，顶部来源名称旁显示对应小图标，正文左侧显示该 Agent 的圆形品牌大 logo，底部 attribution 行显示项目名（工作目录末段）。正文只包含事件消息本身，不再附带工作目录与时间行——Windows 通知自带时间显示。OMO 图标由 `assets/omo-icon-light.svg` 转为 PNG 后内置。各自使用独立的通知身份，可在 Windows「设置 → 系统 → 通知」中分别控制。图标内置于程序，首次使用时写入 `%LOCALAPPDATA%\AgentNotify\icons`；WSL 也写入此 Windows 本地目录，无需保留旧版工具或单独安装图片。
+
+## 通知模板 / Notification templates
+
+`behavior.title_template` 与 `behavior.body_template`（配置文件或「通知超时与去重」向导）可自定义通知标题与正文；留空使用各事件的默认文案。占位符 / Placeholders:
+
+| Placeholder | 展开为 / Expands to |
+| --- | --- |
+| `{agentName}` | Agent 显示名（如 Claude Code）/ Agent display name |
+| `{event}` | 事件显示名（如 运行完成）/ Event display name |
+| `{project}` | 项目名（工作目录末段）/ Last workspace segment |
+| `{workspace}` | 完整工作目录 / Full workspace path |
+| `{session}` | 会话 ID 前 8 位 / First 8 characters of the session ID |
+| `{message}` | 事件默认正文 / Default event body |
+| `{time}` | 发送时刻 HH:MM:SS / Send time |
+
+未知占位符原样保留。标题模板最长 100 字符且不允许换行，正文模板最长 500 字符。模板对两个渠道同时生效；`send` / `test` 显式命令不经过模板。
+
+```yaml
+behavior:
+  title_template: "{agentName} · {event}"
+  body_template: "[{session}] {message}"
+```
 
 ## 自定义目录 / Custom paths
 
@@ -63,7 +89,9 @@ Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，
 
 将新程序解压到原位置，重新运行 `install` 更新接入，随后按 Agent 的要求重新加载 hooks 或扩展。配置保存前会备份现有文件。升级自原仓库时，先备份配置，旧渠道不会在本版本发送通知；旧版 OpenCode 插件需在原工具中卸载，再安装 Senpi/OMO 扩展。
 
-Extract updates into the existing installation directory, rerun setup and reload the agent. Back up existing settings when migrating from upstream. Legacy channels are inactive in this edition. Remove an older OpenCode plugin using the tool that installed it before installing the Senpi extension.
+Hook 订阅是安装时的快照：升级二进制不会自动补新事件订阅。v0.2 为 Claude Code 新增 `StopFailure` / `SubagentStop`、为 Codex 新增 `Interrupt` / `SubagentStop` 订阅，升级后需对相应 Agent 重跑 `install`（增量安装，保留用户自己的 hooks），再在配置中勾选 `run_interrupted` / `subagent_completed`。OMO 扩展重跑 `install` 即整体重渲染。
+
+Extract updates into the existing installation directory, rerun setup and reload the agent. Hook subscriptions are a snapshot taken at install time: upgrading the binary alone does not subscribe new events — rerun `install` per agent (incremental; user hooks are preserved) and opt in to the new events in your configuration. Back up existing settings when migrating from upstream. Legacy channels are inactive in this edition. Remove an older OpenCode plugin using the tool that installed it before installing the Senpi extension.
 
 ```bash
 agent-notify uninstall --agent all

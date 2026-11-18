@@ -13,7 +13,7 @@
 
 企业微信通知使用纯文本，兼容微信端显示；内容包含标题、正文、时间及可用的项目、工作目录和会话信息。超长内容按 UTF-8 字节安全截断，整条消息不超过 2048 字节。
 
-Windows 通知顶部按 Agent 显示独立名称与小图标：`Codex Notify`、`Claude Notify`、`OMO Notify`，正文不显示大图标。图标内置于程序，首次通知时缓存到 Windows 本地目录，Windows 原生和 WSL 均可离线使用。
+Windows 通知顶部按 Agent 显示独立名称与小图标：`Codex Notify`、`Claude Notify`、`OMO Notify`，正文左侧显示该 Agent 的圆形品牌大 logo，底部 attribution 行显示项目名。正文只包含事件消息本身，不再附带时间行。图标内置于程序，首次通知时缓存到 Windows 本地目录，Windows 原生和 WSL 均可离线使用。标题与正文可通过 `behavior.title_template` / `body_template` 占位符（如 `{agentName}`、`{event}`）自定义，详见[使用与排错](docs/usage.md)。
 
 ## 下载安装
 
@@ -66,9 +66,11 @@ agent-notify test wechat-work --agent claude
 
 | Agent（`--agent`） | 默认用户级接入位置 | 支持事件 |
 | --- | --- | --- |
-| Claude Code（`claude`） | `~/.claude/settings.json` | 授权、输入、完成、失败 |
-| Codex（`codex`） | `~/.codex/hooks.json`，并在 `config.toml` 中启用 hooks | 授权、完成 |
-| OMO / Senpi（`omo`） | 若 `~/.omo/agent` 存在，写入其 `extensions/agent-notify.ts`；否则使用 `~/.senpi/agent/extensions/agent-notify.ts` | 授权、输入、完成、失败 |
+| Claude Code（`claude`） | `~/.claude/settings.json` | 授权、输入、完成、失败、子代理完成 |
+| Codex（`codex`） | `~/.codex/hooks.json`，并在 `config.toml` 中启用 hooks | 授权、完成、运行中断、子代理完成 |
+| OMO / Senpi（`omo`） | 若 `~/.omo/agent` 存在，写入其 `extensions/agent-notify.ts`；否则使用 `~/.senpi/agent/extensions/agent-notify.ts` | 授权、输入、完成、失败、运行中断、子代理完成 |
+
+「运行中断」与「子代理完成」默认不订阅：升级与全新安装都不会自动开启，需在向导或 `--events` 中显式勾选。Hook 订阅是安装时的快照——升级二进制后需对相应 Agent 重跑 `install` 才会写入新事件订阅。
 
 OMO 接入使用 Senpi 的 `agent_settled` 和 `herdr:blocked` 扩展接口，不安装旧版 OpenCode 插件。Codex 安装后请重启并运行 `/hooks` 审核、信任变更；OMO 运行 `/reload` 或重启以加载扩展。自定义目录、项目级安装和事件名称见[使用与排错](docs/usage.md)。
 

@@ -13,7 +13,7 @@ This edition supports **Claude Code, Codex, and Senpi-based Oh My OpenCode (OMO)
 
 WeCom notifications use plain text for compatibility with WeChat. Messages include a title, body, timestamp and available project, workspace and session details. Long content is truncated at UTF-8 character boundaries to keep the entire message within 2048 bytes.
 
-Windows notification headers have distinct names and small icons: `Codex Notify`, `Claude Notify`, and `OMO Notify`. Notification bodies contain text without a large logo. Icons are embedded in the executable and cached on Windows at first use, including when sending from WSL, with no downloads required.
+Windows notification headers have distinct names and small icons: `Codex Notify`, `Claude Notify`, and `OMO Notify`. Each toast shows the agent's circular brand logo on the left and the project name in an attribution line; the body carries only the event message. Icons are embedded in the executable and cached on Windows at first use, including when sending from WSL, with no downloads required. Titles and bodies can be customized with `behavior.title_template` / `body_template` placeholders such as `{agentName}` and `{event}` — see [usage](docs/usage.md).
 
 ## Install
 
@@ -66,9 +66,11 @@ The environment variable is read during setup and saved to the local configurati
 
 | Agent (`--agent`) | Default user integration | Events |
 | --- | --- | --- |
-| Claude Code (`claude`) | `~/.claude/settings.json` | permission, input, completed, failed |
-| Codex (`codex`) | `~/.codex/hooks.json` and the hooks feature in `config.toml` | permission, completed |
-| OMO / Senpi (`omo`) | `~/.omo/agent/extensions/agent-notify.ts` when that agent directory exists; otherwise `~/.senpi/agent/extensions/agent-notify.ts` | permission, input, completed, failed |
+| Claude Code (`claude`) | `~/.claude/settings.json` | permission, input, completed, failed, subagent |
+| Codex (`codex`) | `~/.codex/hooks.json` and the hooks feature in `config.toml` | permission, completed, interrupted, subagent |
+| OMO / Senpi (`omo`) | `~/.omo/agent/extensions/agent-notify.ts` when that agent directory exists; otherwise `~/.senpi/agent/extensions/agent-notify.ts` | permission, input, completed, failed, interrupted, subagent |
+
+The `interrupted` and `subagent` events are opt-in: they stay off for upgrades and fresh installs until selected. Hook subscriptions are a snapshot taken at install time — after upgrading the binary, rerun `install` per agent to subscribe new events.
 
 This OMO integration targets the Senpi extension interface (`agent_settled` and `herdr:blocked`). It does not install the older OpenCode plugin. Restart Codex after installation and run `/hooks` to review and trust hook changes. In OMO, run `/reload` or restart to load the extension. See [configuration and troubleshooting](docs/usage.md) for custom directories, project scope and event names.
 

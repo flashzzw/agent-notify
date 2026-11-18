@@ -109,3 +109,68 @@ func TestConfigRejectsInvalidTimeoutAndPreservesFile(t *testing.T) {
 		t.Fatal("invalid config overwrote file")
 	}
 }
+
+// 升级守卫：白名单随版本扩展,默认选择集保持首期集合,
+// 保证已有用户与新装用户升级后不会突然收到更多通知。
+func TestEventsWhitelistGrowsButDefaultsDoNot(t *testing.T) {
+	if !strings.Contains(strings.Join(Events("claude"), ","), "subagent_completed") {
+		t.Fatalf("claude whitelist should include subagent_completed: %v", Events("claude"))
+	}
+	if strings.Contains(strings.Join(Events("claude"), ","), "run_interrupted") {
+		t.Fatalf("claude has no interrupt hook; run_interrupted must stay off the whitelist")
+	}
+	if !strings.Contains(strings.Join(Events("codex"), ","), "run_interrupted") {
+		t.Fatalf("codex whitelist should include run_interrupted: %v", Events("codex"))
+	}
+	cfg := Default()
+	for _, id := range Agents {
+		_, n, _ := cfg.Target(id)
+		for _, event := range n.Events {
+			if event == "subagent_completed" || event == "run_interrupted" {
+				t.Fatalf("Default() enabled %s for %s; new events must be opt-in", event, id)
+			}
+		}
+	}
+}
+
+func TestTemplateValidationRoundTripAndRejection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := Default()
+	cfg.Behavior.TitleTemplate = "{agentName} · {event}"
+	cfg.Behavior.BodyTemplate = "[{session}] {message}"
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Behavior.TitleTemplate != "{agentName} · {event}" || got.Behavior.BodyTemplate != "[{session}] {message}" {
+		t.Fatalf("templates did not round-trip: %+v", got.Behavior)
+	}
+
+	before, _ := os.ReadFile(path)
+	cfg.Behavior.TitleTemplate = "标题\n带换行"
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("newline in title template accepted")
+	}
+	cfg.Behavior.TitleTemplate = strings.Repeat("长", 101)
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("oversized title template accepted")
+	}
+	cfg.Behavior.TitleTemplate = "合法 {unknown_placeholder} 标题"
+	cfg.Behavior.BodyTemplate = "正文\n多行 {message}"
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("unknown placeholders and body newlines should stay legal: %v", err)
+	}
+	// Re-baseline after the legal save, then confirm rejected saves never touch disk.
+	before, _ = os.ReadFile(path)
+	cfg.Behavior.BodyTemplate = strings.Repeat("长", 501)
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("oversized body template accepted")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("invalid config overwrote file")
+	}
+}

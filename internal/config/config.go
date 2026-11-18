@@ -62,6 +62,9 @@ type BehaviorConfig struct {
 	DedupeSeconds      int    `yaml:"dedupe_seconds"`
 	SendTimeoutSeconds int    `yaml:"send_timeout_seconds"`
 	Locale             string `yaml:"locale"`
+	// TitleTemplate / BodyTemplate 渲染通知标题与正文；空值保持各解析器的默认文案。
+	TitleTemplate string `yaml:"title_template,omitempty"`
+	BodyTemplate  string `yaml:"body_template,omitempty"`
 }
 
 func AgentName(agent string) string {
@@ -102,18 +105,37 @@ func (c *Config) Target(agent string) (*AgentTargetConfig, *AgentNotifyConfig, e
 		return nil, nil, fmt.Errorf("unsupported agent %q (claude, codex, omo)", agent)
 	}
 }
+
+// Events 返回某 Agent 的可订阅事件白名单（校验与向导选项来源）。
+// 与 defaultEvents 分离：白名单随版本扩展，默认选择集保持首期集合，
+// 升级用户与新装用户都不会意外收到更多通知。
 func Events(agent string) []string {
-	if NormalizeAgent(agent) == "codex" {
-		return []string{"permission_required", "run_completed"}
+	switch NormalizeAgent(agent) {
+	case "codex":
+		return []string{"permission_required", "run_completed", "run_interrupted", "subagent_completed"}
+	case "claude":
+		// Claude Code 无 Interrupt 类 hook 事件，故不提供 run_interrupted。
+		return []string{"permission_required", "input_required", "run_completed", "run_failed", "subagent_completed"}
+	default:
+		return []string{"permission_required", "input_required", "run_completed", "run_failed", "run_interrupted", "subagent_completed"}
 	}
-	return []string{"permission_required", "input_required", "run_completed", "run_failed"}
+}
+
+// defaultEvents 是新装与缺省配置的默认选择集（首期集合，不含新增事件）。
+func defaultEvents(agent string) []string {
+	switch NormalizeAgent(agent) {
+	case "codex":
+		return []string{"permission_required", "run_completed"}
+	default:
+		return []string{"permission_required", "input_required", "run_completed", "run_failed"}
+	}
 }
 func Default() Config {
 	c := Config{Version: currentConfigVersion, Behavior: BehaviorConfig{DedupeSeconds: 10, SendTimeoutSeconds: 10, Locale: "zh-CN"}}
 	for _, id := range Agents {
 		a, n, _ := c.Target(id)
 		a.InstallScope = "user"
-		n.Events = Events(id)
+		n.Events = defaultEvents(id)
 	}
 	return c
 }
@@ -193,6 +215,12 @@ func (c Config) Validate() error {
 	if c.Behavior.SendTimeoutSeconds < 1 || c.Behavior.SendTimeoutSeconds > 60 {
 		return fmt.Errorf("send_timeout_seconds 必须在 1–60 之间")
 	}
+	if err := ValidateTemplate("title_template", c.Behavior.TitleTemplate, 100, false); err != nil {
+		return err
+	}
+	if err := ValidateTemplate("body_template", c.Behavior.BodyTemplate, 500, true); err != nil {
+		return err
+	}
 	for _, id := range Agents {
 		a, n, _ := c.Target(id)
 		if a.InstallScope != "user" && a.InstallScope != "project" {
@@ -208,6 +236,21 @@ func (c Config) Validate() error {
 				return fmt.Errorf("%s: %w", id, err)
 			}
 		}
+	}
+	return nil
+}
+
+// ValidateTemplate 校验通知模板：长度按 rune 计，标题不允许换行（Toast 单行
+// 展示）。未知占位符不在此拒绝——渲染时原样保留。
+func ValidateTemplate(field, template string, maxRunes int, allowNewlines bool) error {
+	if template == "" {
+		return nil
+	}
+	if n := len([]rune(template)); n > maxRunes {
+		return fmt.Errorf("%s 长度 %d 超过上限 %d", field, n, maxRunes)
+	}
+	if !allowNewlines && strings.ContainsAny(template, "\r\n") {
+		return fmt.Errorf("%s 不允许换行", field)
 	}
 	return nil
 }

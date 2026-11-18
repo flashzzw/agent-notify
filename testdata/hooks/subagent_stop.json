@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "SubagentStop",
+  "session_id": "sess-1",
+  "agent_id": "agent-01",
+  "agent_type": "Explore",
+  "cwd": "/tmp/demo",
+  "last_assistant_message": "已定位到 internal/notify/windows.go 的 XML 拼装点"
+}

@@ -10,6 +10,12 @@ func DefaultBody(event string) string {
 		return "新的 Agent 会话已开始"
 	case "run_completed":
 		return "任务已完成，请查看结果"
+	case "run_failed":
+		return "任务运行失败，请查看对话"
+	case "run_interrupted":
+		return "运行已被中断"
+	case "subagent_completed":
+		return "子代理任务已完成"
 	default:
 		return ""
 	}
@@ -48,6 +54,10 @@ func eventDisplayName(event string) string {
 		return "运行完成"
 	case "run_failed":
 		return "运行失败"
+	case "run_interrupted":
+		return "运行中断"
+	case "subagent_completed":
+		return "子代理完成"
 	default:
 		return event
 	}

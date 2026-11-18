@@ -147,7 +147,7 @@ func runSetup(s Streams, path string, p Prompter) error {
 			return err
 		}
 	}
-	labels := map[string]string{"permission_required": "等待授权", "input_required": "等待输入", "run_completed": "运行完成", "run_failed": "运行失败"}
+	labels := map[string]string{"permission_required": "等待授权", "input_required": "等待输入", "run_completed": "运行完成", "run_failed": "运行失败", "run_interrupted": "运行中断", "subagent_completed": "子代理完成"}
 	opts := []PromptOption{}
 	for _, event := range config.Events(id) {
 		opts = append(opts, PromptOption{Label: labels[event], Value: event})
@@ -190,6 +190,17 @@ func runBehavior(path string, p Prompter) error {
 			return fmt.Errorf("请输入整数")
 		}
 		*field.value = value
+	}
+	// 模板输入：留空使用默认文案。占位符见 usage.md（{agentName}、{event} 等）。
+	for _, field := range []struct {
+		label string
+		value *string
+	}{{"标题模板（留空使用默认，如 {agentName} · {event}）", &cfg.Behavior.TitleTemplate}, {"正文模板（留空使用默认）", &cfg.Behavior.BodyTemplate}} {
+		answer, err := p.Input(field.label, *field.value)
+		if err != nil {
+			return err
+		}
+		*field.value = strings.TrimSpace(answer)
 	}
 	return config.Save(path, cfg)
 }

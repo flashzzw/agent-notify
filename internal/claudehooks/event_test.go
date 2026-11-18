@@ -130,3 +130,45 @@ func TestParseMessageIgnoresHugeUndeclaredToolInput(t *testing.T) {
 		t.Fatalf("大 tool_input 影响了其它字段: %+v", msg)
 	}
 }
+
+func TestParseStopFailure(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "hooks", "stop_failure.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := parseMessageBytes(data)
+	if err != nil {
+		t.Fatalf("ParseMessage() error = %v", err)
+	}
+	if msg.Event != "run_failed" || msg.Agent != "claude_code" {
+		t.Fatalf("Event = %q Agent = %q, want run_failed / claude_code", msg.Event, msg.Agent)
+	}
+	if !strings.Contains(msg.Body, "529 overloaded") {
+		t.Fatalf("Body = %q, want last_assistant_message carried", msg.Body)
+	}
+}
+
+func TestParseSubagentStop(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "hooks", "subagent_stop.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := parseMessageBytes(data)
+	if err != nil {
+		t.Fatalf("ParseMessage() error = %v", err)
+	}
+	if msg.Event != "subagent_completed" {
+		t.Fatalf("Event = %q, want subagent_completed", msg.Event)
+	}
+	if !strings.Contains(msg.Body, "windows.go") {
+		t.Fatalf("Body = %q, want last_assistant_message carried", msg.Body)
+	}
+	// 空 last_assistant_message 时回退默认文案。
+	msg, err = parseMessageBytes([]byte(`{"hook_event_name":"SubagentStop","session_id":"s1","cwd":"/w"}`))
+	if err != nil {
+		t.Fatalf("ParseMessage() error = %v", err)
+	}
+	if msg.Event != "subagent_completed" || msg.Body != notify.DefaultBody("subagent_completed") {
+		t.Fatalf("empty message should fall back to default body, got %+v", msg)
+	}
+}

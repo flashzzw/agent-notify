@@ -20,6 +20,9 @@ func Dispatch(ctx context.Context, cfg config.Config, statePath, logPath string,
 		return nil
 	}
 	msg.Workspace = notify.ResolveWorkspace(msg.Workspace)
+	// 模板在 Dispatch 层渲染：三个 hooks 解析器只产默认文案，两个渠道共享
+	// 模板后的 Title/Body（企微排版逻辑不变，自然生效）。
+	msg = notify.ApplyTemplates(msg, cfg.Behavior.TitleTemplate, cfg.Behavior.BodyTemplate)
 	var senders []notify.Sender
 	if n.Channels.System.Enabled {
 		senders = append(senders, notify.NewSystemSender(notify.DefaultRunner))

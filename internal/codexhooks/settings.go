@@ -14,9 +14,12 @@ const hookCommandMarker = "handle-codex-hook"
 // managedEvents 是本插件托管的 Codex 事件列表。
 // PermissionRequest / Stop 对应项目里的 permission_required / run_completed。
 // 旧版配置可能仍包含 SessionStart；当前首期安装不再订阅它。
+// Interrupt / SubagentStop 为 v0.2 新增订阅：已安装用户需重跑 install 增量补齐。
 var managedEvents = []string{
 	"PermissionRequest",
 	"Stop",
+	"Interrupt",
+	"SubagentStop",
 }
 
 // BuildHookSettings 生成 Codex hooks.json 所需的 settings 结构。

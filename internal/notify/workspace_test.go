@@ -47,11 +47,20 @@ func TestResolveWorkspaceEmptyFallsBack(t *testing.T) {
 	}
 }
 
-func TestShortenWorkspaceChinese(t *testing.T) {
-	in := `E:\学习ai编程项目\agent-notify`
-	got := shortenWorkspace(in)
-	if got != "学习ai编程项目/agent-notify" {
-		t.Fatalf("shortenWorkspace(%q) = %q, want 学习ai编程项目/agent-notify", in, got)
+func TestProjectBase(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`E:\学习ai编程项目\agent-notify`, "agent-notify"},
+		{"/home/u/学习ai编程项目/agent-notify", "agent-notify"},
+		{`E:\单段项目`, "单段项目"},
+		{`C:\`, ""},
+		{"  ", ""},
+		{"", ""},
+		{`E:\a\b\trailing\`, "trailing"},
+	}
+	for _, tc := range cases {
+		if got := projectBase(tc.in); got != tc.want {
+			t.Fatalf("projectBase(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

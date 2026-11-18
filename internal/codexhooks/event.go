@@ -20,6 +20,8 @@ type payload struct {
 	PermissionMode       string          `json:"permission_mode"`
 	TurnID               string          `json:"turn_id"`
 	ToolName             string          `json:"tool_name"`
+	AgentID              string          `json:"agent_id"`
+	AgentType            string          `json:"agent_type"`
 	StopHookActive       json.RawMessage `json:"stop_hook_active"` // 容错:接受 bool 或 "true"/"false"
 	LastAssistantMessage string          `json:"last_assistant_message"`
 }
@@ -61,6 +63,29 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 			SessionID: p.SessionID,
 			Workspace: p.CWD,
 			Title:     notify.FormatTitle("codex", "run_completed"),
+			Body:      body,
+		}, nil
+	case "Interrupt":
+		// 用户 ESC 中断活跃 turn；统一归入 run_interrupted。
+		return notify.Message{
+			Agent:     "codex",
+			Event:     "run_interrupted",
+			SessionID: p.SessionID,
+			Workspace: p.CWD,
+			Title:     notify.FormatTitle("codex", "run_interrupted"),
+			Body:      notify.DefaultBody("run_interrupted"),
+		}, nil
+	case "SubagentStop":
+		body := notify.DefaultBody("subagent_completed")
+		if hint := truncateMessage(strings.TrimSpace(p.LastAssistantMessage), 200); hint != "" {
+			body = hint
+		}
+		return notify.Message{
+			Agent:     "codex",
+			Event:     "subagent_completed",
+			SessionID: p.SessionID,
+			Workspace: p.CWD,
+			Title:     notify.FormatTitle("codex", "subagent_completed"),
 			Body:      body,
 		}, nil
 	default:

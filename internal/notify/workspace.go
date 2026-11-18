@@ -46,22 +46,21 @@ func isUsableWorkspace(p string) bool {
 	return true
 }
 
-// shortenWorkspace shortens a long path to the last two segments for toast display.
-// Example: E:\学习ai编程项目\agent-notify → 学习ai编程项目/agent-notify
-func shortenWorkspace(ws string) string {
-	// 同时归一化 '\' 与 '/'：filepath.ToSlash 只处理本机分隔符，跨平台时
-	// （如在 Linux 上收到 Windows 的 E:\a\b 路径）不足，故再显式替换反斜杠。
+// projectBase returns the last segment of a workspace path, for toast
+// attribution and template {project}. Example: E:\学习ai编程项目\agent-notify → agent-notify
+func projectBase(ws string) string {
+	ws = strings.TrimSpace(ws)
+	if ws == "" {
+		return ""
+	}
 	normalized := strings.ReplaceAll(filepath.ToSlash(ws), `\`, "/")
-	parts := strings.Split(normalized, "/")
-	var segs []string
-	for _, p := range parts {
-		if p != "" {
-			segs = append(segs, p)
-		}
+	normalized = strings.TrimRight(normalized, "/")
+	if normalized == "" || strings.HasSuffix(normalized, ":") {
+		// Bare drive roots like "C:" carry no project segment.
+		return ""
 	}
-	if len(segs) <= 2 {
-		// Prefer forward slashes for consistent multi-platform toast text.
-		return normalized
+	if idx := strings.LastIndex(normalized, "/"); idx >= 0 {
+		return normalized[idx+1:]
 	}
-	return strings.Join(segs[len(segs)-2:], "/")
+	return normalized
 }

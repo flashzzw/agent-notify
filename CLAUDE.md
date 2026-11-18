@@ -18,8 +18,8 @@ go vet ./...
 - `internal/config`：`~/.agent-notify/config.yaml`，包含 Agent、事件、渠道和行为配置；保存前校验 Webhook 与超时。
 - `internal/app`：安装、启用、卸载 Agent 接入的生命周期。
 - `internal/claudehooks`、`internal/codexhooks`、`internal/senpihooks`：读取 hook / Senpi 扩展事件并转换为统一通知消息。
-- `internal/agenthooks`：按 Agent 配置选择发送器、去重、超时和日志。
-- `internal/notify`：企业微信 HTTP Sender 与 Windows/WSL PowerShell Toast Sender。
+- `internal/agenthooks`：按 Agent 配置选择发送器、去重、超时和日志；通知模板（`behavior.title_template` / `body_template`）在 Dispatch 层渲染。
+- `internal/notify`：企业微信 HTTP Sender 与 Windows/WSL PowerShell Toast Sender（品牌圆形 logo、attribution 项目名）。
 - `internal/state`：发送去重、冻结和日志文件。
 - `internal/common`：配置文件原子写入、hook 事件大小限制和命令路径处理。
 

@@ -13,11 +13,14 @@ const hookCommandMarker = "handle-claude-hook"
 
 // managedEvents 是本插件托管的 Claude Code 事件列表。
 // 旧版配置可能仍包含 SessionStart；当前首期安装不再订阅它。
+// StopFailure / SubagentStop 为 v0.2 新增订阅：已安装用户需重跑 install 增量补齐。
 var managedEvents = []string{
 	"PermissionRequest",
 	"Notification",
 	"Stop",
 	"PostToolUseFailure",
+	"StopFailure",
+	"SubagentStop",
 }
 
 func BuildHookSettings(binaryPath string) map[string]any {

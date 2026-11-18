@@ -49,10 +49,14 @@ handlers.get('agent_start')({},ctx);
 handlers.get('agent_end')({messages:[{role:'assistant',stopReason:'stop'}]},ctx);
 handlers.get('agent_settled')({},ctx);
 assert.equal(calls.at(-1).payload.event,'run_completed');
+// 主会话 aborted:run_interrupted(此前直接跳过,零通知)
 handlers.get('agent_end')({messages:[{role:'assistant',stopReason:'aborted'}]},ctx);
 handlers.get('agent_settled')({},ctx);
-assert.equal(calls.length,4);
-pi.sessionKind='worker';handlers.get('agent_settled')({},ctx);assert.equal(calls.length,4);
+assert.equal(calls.at(-1).payload.event,'run_interrupted');
+// worker 会话 settled:subagent_completed(此前直接跳过,零通知)
+pi.sessionKind='worker';handlers.get('agent_settled')({},ctx);
+assert.equal(calls.at(-1).payload.event,'subagent_completed');
+assert.equal(calls.length,6);
 assert.equal(handlers.has('ui_prompt_start'),false);
 assert.equal(calls[0].binary,'C:/通知/agent-notify.exe');
 assert.deepEqual(calls[0].args,['handle-omo-hook','--config','C:/配置/config.yaml']);

@@ -45,13 +45,85 @@ func TestDesktopNotificationEncodesUntrustedTextWithoutClickAction(t *testing.T)
 		t.Fatal("missing encoded toast delivery")
 	}
 	var toast struct {
-		Texts []string `xml:"visual>binding>text"`
+		Texts  []string `xml:"visual>binding>text"`
+		Images []struct {
+			Placement string `xml:"placement,attr"`
+			HintCrop  string `xml:"hint-crop,attr"`
+			Src       string `xml:"src,attr"`
+		} `xml:"visual>binding>image"`
 	}
 	if err := xml.Unmarshal([]byte(request.XML), &toast); err != nil {
 		t.Fatal(err)
 	}
-	if len(toast.Texts) != 2 || toast.Texts[0] != "测试" || !strings.Contains(toast.Texts[1], body) {
+	if len(toast.Texts) != 2 || toast.Texts[0] != "测试" || toast.Texts[1] != body {
 		t.Fatalf("notification text did not survive encoding: %v", toast.Texts)
+	}
+	// The agent logo rides in the toast as a branded circle image; its real
+	// file:/// URI is substituted by the PowerShell side before LoadXml.
+	if len(toast.Images) != 1 || toast.Images[0].Placement != "appLogoOverride" ||
+		toast.Images[0].HintCrop != "circle" || toast.Images[0].Src != logoSrcPlaceholder {
+		t.Fatalf("notification image = %+v, want one circular appLogoOverride with placeholder src", toast.Images)
+	}
+}
+
+func TestDesktopNotificationShowsProjectAttributionAndNoTimestamp(t *testing.T) {
+	var request desktopTestRequest
+	sender := NewWindowsSender(func(_ context.Context, _ string, input io.Reader, _ ...string) error {
+		request = readDesktopTestRequest(t, input)
+		return nil
+	})
+	msg := Message{
+		Agent:     "claude_code",
+		Workspace: "/home/u/学习ai编程项目/agent-notify",
+		Title:     "Claude Code 运行完成",
+		Body:      "任务已完成，请查看结果",
+	}
+	if err := sender.Send(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	var toast struct {
+		Texts []struct {
+			Text      string `xml:",chardata"`
+			Placement string `xml:"placement,attr"`
+		} `xml:"visual>binding>text"`
+	}
+	if err := xml.Unmarshal([]byte(request.XML), &toast); err != nil {
+		t.Fatal(err)
+	}
+	if len(toast.Texts) != 3 {
+		t.Fatalf("notification texts = %v, want title, body, attribution", toast.Texts)
+	}
+	if toast.Texts[0].Text != msg.Title || toast.Texts[0].Placement != "" {
+		t.Fatalf("title = %+v, want %q", toast.Texts[0], msg.Title)
+	}
+	// The body must be byte-identical: no workspace line, no hand-rolled timestamp.
+	if toast.Texts[1].Text != msg.Body {
+		t.Fatalf("body = %q, want %q exactly (no extra lines)", toast.Texts[1].Text, msg.Body)
+	}
+	if toast.Texts[2].Placement != "attribution" || toast.Texts[2].Text != "agent-notify" {
+		t.Fatalf("attribution = %+v, want project name agent-notify", toast.Texts[2])
+	}
+}
+
+func TestDesktopNotificationOmitsAttributionWithoutWorkspace(t *testing.T) {
+	var request desktopTestRequest
+	sender := NewWindowsSender(func(_ context.Context, _ string, input io.Reader, _ ...string) error {
+		request = readDesktopTestRequest(t, input)
+		return nil
+	})
+	if err := sender.Send(context.Background(), Message{Agent: "codex", Title: "t", Body: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	var toast struct {
+		Texts []struct {
+			Placement string `xml:"placement,attr"`
+		} `xml:"visual>binding>text"`
+	}
+	if err := xml.Unmarshal([]byte(request.XML), &toast); err != nil {
+		t.Fatal(err)
+	}
+	if len(toast.Texts) != 2 || toast.Texts[1].Placement == "attribution" {
+		t.Fatalf("texts = %+v, want exactly title+body without attribution", toast.Texts)
 	}
 }
 
@@ -98,13 +170,24 @@ func TestDesktopNotificationUsesAgentIdentityAndEmbeddedLogo(t *testing.T) {
 				var toast struct {
 					Images []struct {
 						Placement string `xml:"placement,attr"`
+						HintCrop  string `xml:"hint-crop,attr"`
+						Src       string `xml:"src,attr"`
 					} `xml:"visual>binding>image"`
 				}
 				if err := xml.Unmarshal([]byte(request.XML), &toast); err != nil {
 					t.Fatal(err)
 				}
-				if len(toast.Images) != 0 {
-					t.Fatal("notification body should not contain a large logo")
+				wantImages := 1
+				if tc.appID == "AgentNotify.Desktop" {
+					wantImages = 0
+				}
+				if len(toast.Images) != wantImages {
+					t.Fatalf("notification image count = %d, want %d", len(toast.Images), wantImages)
+				}
+				for _, img := range toast.Images {
+					if img.Placement != "appLogoOverride" || img.HintCrop != "circle" || img.Src != logoSrcPlaceholder {
+						t.Fatalf("notification image = %+v, want circular branded logo", img)
+					}
 				}
 				if tc.appID == "AgentNotify.Desktop" {
 					if len(request.Icon) != 0 || request.IconFile != "" {

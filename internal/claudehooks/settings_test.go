@@ -18,7 +18,7 @@ func TestBuildHookSettings(t *testing.T) {
 		t.Fatalf("hooks type = %T, want map[string]any", got["hooks"])
 	}
 
-	events := []string{"PermissionRequest", "Notification", "Stop", "PostToolUseFailure"}
+	events := []string{"PermissionRequest", "Notification", "Stop", "PostToolUseFailure", "StopFailure", "SubagentStop"}
 	for _, event := range events {
 		items, ok := hooks[event].([]map[string]any)
 		if !ok || len(items) != 1 {

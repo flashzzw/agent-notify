@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "StopFailure",
+  "session_id": "sess-1",
+  "cwd": "/tmp/demo",
+  "last_assistant_message": "API request failed with 529 overloaded"
+}

@@ -1,0 +1,13 @@
+{
+  "hook_event_name": "SubagentStop",
+  "session_id": "sess-codex-2",
+  "transcript_path": null,
+  "cwd": "/tmp/demo",
+  "model": "gpt-5.4",
+  "permission_mode": "default",
+  "turn_id": "turn-4",
+  "agent_id": "agent-07",
+  "agent_type": "general-purpose",
+  "stop_hook_active": false,
+  "last_assistant_message": "搜索完成，共命中 3 处引用。"
+}

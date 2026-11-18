@@ -40,8 +40,8 @@ export default function (pi) {
   });
   pi.on("agent_settled", (event, ctx) => {
     remember(ctx);
-    if (pi.sessionKind === "worker") return;
-    if (lastAssistant?.stopReason === "aborted") return;
+    if (pi.sessionKind === "worker") { send(pi, "subagent_completed", "", sessionID); return; }
+    if (lastAssistant?.stopReason === "aborted") { send(pi, "run_interrupted", "", sessionID); return; }
     const failed = Boolean(event?.fallbackExhausted || lastAssistant?.stopReason === "error");
     send(pi, failed ? "run_failed" : "run_completed", failed ? "Agent 运行失败" : "任务已完成，请查看结果", sessionID);
   });

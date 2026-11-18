@@ -94,6 +94,48 @@ func TestParseStopFallsBackToDefaultBody(t *testing.T) {
 	}
 }
 
+func TestParseInterrupt(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "codex-hooks", "interrupt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := parseMessageBytes(data)
+	if err != nil {
+		t.Fatalf("ParseMessage() error = %v", err)
+	}
+	if msg.Event != "run_interrupted" || msg.Agent != "codex" {
+		t.Fatalf("Event = %q Agent = %q, want run_interrupted / codex", msg.Event, msg.Agent)
+	}
+	if msg.Body != notify.DefaultBody("run_interrupted") {
+		t.Fatalf("Body = %q, want default interrupted body", msg.Body)
+	}
+}
+
+func TestParseSubagentStop(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "codex-hooks", "subagent_stop.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := parseMessageBytes(data)
+	if err != nil {
+		t.Fatalf("ParseMessage() error = %v", err)
+	}
+	if msg.Event != "subagent_completed" {
+		t.Fatalf("Event = %q, want subagent_completed", msg.Event)
+	}
+	if !strings.Contains(msg.Body, "3 处引用") {
+		t.Fatalf("Body = %q, want last_assistant_message carried", msg.Body)
+	}
+	// 空 last_assistant_message 时回退默认文案。
+	msg, err = parseMessageBytes([]byte(`{"hook_event_name":"SubagentStop","session_id":"s","cwd":"/tmp"}`))
+	if err != nil {
+		t.Fatalf("ParseMessage() error = %v", err)
+	}
+	if msg.Event != "subagent_completed" || msg.Body != notify.DefaultBody("subagent_completed") {
+		t.Fatalf("empty message should fall back to default body, got %+v", msg)
+	}
+}
+
 func TestParseUnsupportedEvent(t *testing.T) {
 	raw := []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s","cwd":"/tmp"}`)
 

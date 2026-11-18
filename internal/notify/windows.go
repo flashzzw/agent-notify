@@ -18,6 +18,12 @@ import (
 // XML-escaped Base64 payloads never become executable code.
 type WindowsSender struct{ run Runner }
 
+// logoSrcPlaceholder 是 Toast XML image src 的占位串。Go/WSL 侧不知道
+// 图标在 Windows 文件系统中的真实路径（由 PowerShell 侧解析），脚本会在
+// LoadXml 前把它替换为 file:/// URI。URI 形态保证 XML 属性安全，且与
+// 用户文本碰撞概率趋零。
+const logoSrcPlaceholder = "urn:agent-notify:logo"
+
 func NewWindowsSender(run Runner) *WindowsSender {
 	if run == nil {
 		run = DefaultRunner
@@ -25,17 +31,30 @@ func NewWindowsSender(run Runner) *WindowsSender {
 	return &WindowsSender{run: run}
 }
 func (s *WindowsSender) Name() string { return "system" }
+
 func (s *WindowsSender) Send(ctx context.Context, msg Message) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	identity := identityForAgent(msg.Agent)
 	var payload bytes.Buffer
-	payload.WriteString(`<toast duration="long"><visual><binding template="ToastGeneric"><text>`)
+	payload.WriteString(`<toast duration="long"><visual><binding template="ToastGeneric">`)
+	if len(identity.Icon) > 0 {
+		payload.WriteString(`<image placement="appLogoOverride" hint-crop="circle" src="`)
+		payload.WriteString(logoSrcPlaceholder)
+		payload.WriteString(`"/>`)
+	}
+	payload.WriteString(`<text>`)
 	_ = xml.EscapeText(&payload, []byte(common.TruncateRunes(msg.Title, 120)))
 	payload.WriteString(`</text><text>`)
-	_ = xml.EscapeText(&payload, []byte(common.TruncateRunes(s.formatBody(msg), 1200)))
-	payload.WriteString(`</text></binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>`)
+	_ = xml.EscapeText(&payload, []byte(common.TruncateRunes(msg.Body, 1200)))
+	payload.WriteString(`</text>`)
+	if attribution := attributionText(msg); attribution != "" {
+		payload.WriteString(`<text placement="attribution">`)
+		_ = xml.EscapeText(&payload, []byte(attribution))
+		payload.WriteString(`</text>`)
+	}
+	payload.WriteString(`</binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>`)
 	request, err := json.Marshal(struct {
 		desktopIdentity
 		XML string
@@ -58,16 +77,11 @@ func (s *WindowsSender) Send(ctx context.Context, msg Message) error {
 	}
 	return nil
 }
-func (s *WindowsSender) formatBody(msg Message) string {
-	parts := []string{}
-	if msg.Workspace != "" {
-		parts = append(parts, shortenWorkspace(msg.Workspace))
-	}
-	if msg.Body != "" {
-		parts = append(parts, msg.Body)
-	}
-	parts = append(parts, time.Now().Format("15:04:05"))
-	return strings.Join(parts, "\n")
+
+// attributionText 返回 attribution 行文案：workspace 的项目末段。
+// 空时返回空串，调用方省略整个 attribution 元素。
+func attributionText(msg Message) string {
+	return common.TruncateRunes(projectBase(msg.Workspace), 60)
 }
 
 // HKCU registration gives unpackaged apps a stable name. No activation handler is installed.
@@ -101,7 +115,15 @@ if ($iconPath) {
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-$xml.LoadXml($request.XML)
+$xmlText = $request.XML
+if ($iconPath) {
+    # [Uri] produces a correctly percent-encoded file:/// URI for CJK, spaces, # and %.
+    # '&' survives URI escaping (legal in a URI path) but is illegal in raw XML, so
+    # escape it before splicing the URI into the attribute value.
+    $iconUri = ([Uri]::new($iconPath)).AbsoluteUri.Replace('&', '&amp;')
+    $xmlText = $xmlText.Replace('urn:agent-notify:logo', $iconUri)
+}
+$xml.LoadXml($xmlText)
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 $toast.ExpirationTime = [DateTimeOffset]::Now.AddMinutes(5)
 $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appID)

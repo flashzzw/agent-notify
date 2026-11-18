@@ -19,6 +19,8 @@ type payload struct {
 	// tool_response / tool_input 依工具而异(对象/字符串/数组),用 RawMessage
 	// 容错解析,单字段类型意外不丢整个事件(issue #32)
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// Stop / SubagentStop / StopFailure 携带的最终模型输出
+	LastAssistantMessage string `json:"last_assistant_message"`
 }
 
 func ParseMessage(stdin io.Reader) (notify.Message, error) {
@@ -70,6 +72,33 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 			Title:     notify.FormatTitle("claude_code", "run_completed"),
 			Body:      notify.DefaultBody("run_completed"),
 		}, nil
+	case "StopFailure":
+		// turn 因 API 错误终止，归入 run_failed。
+		body := notify.DefaultBody("run_failed")
+		if hint := truncateLastAssistantMessage(p.LastAssistantMessage); hint != "" {
+			body = hint
+		}
+		return notify.Message{
+			Agent:     "claude_code",
+			Event:     "run_failed",
+			SessionID: p.SessionID,
+			Workspace: p.CWD,
+			Title:     notify.FormatTitle("claude_code", "run_failed"),
+			Body:      body,
+		}, nil
+	case "SubagentStop":
+		body := notify.DefaultBody("subagent_completed")
+		if hint := truncateLastAssistantMessage(p.LastAssistantMessage); hint != "" {
+			body = hint
+		}
+		return notify.Message{
+			Agent:     "claude_code",
+			Event:     "subagent_completed",
+			SessionID: p.SessionID,
+			Workspace: p.CWD,
+			Title:     notify.FormatTitle("claude_code", "subagent_completed"),
+			Body:      body,
+		}, nil
 	case "PostToolUseFailure":
 		errMsg := extractErrorMessage(common.LenientObject(p.ToolResponse))
 		return notify.Message{
@@ -83,6 +112,11 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 	default:
 		return notify.Message{}, fmt.Errorf("unsupported hook event: %s", p.HookEventName)
 	}
+}
+
+// truncateLastAssistantMessage 截取最终输出作为通知正文,rune 安全(issue #33)。
+func truncateLastAssistantMessage(msg string) string {
+	return common.TruncateRunes(strings.TrimSpace(msg), 200)
 }
 
 // extractInputHint extracts a cleaner hint from the notification message

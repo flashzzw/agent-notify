@@ -24,7 +24,35 @@ func TestFormatTitle(t *testing.T) {
 }
 
 func TestDefaultBody(t *testing.T) {
-	if got := DefaultBody("run_completed"); got != "任务已完成，请查看结果" {
-		t.Fatalf("DefaultBody() = %q, want %q", got, "任务已完成，请查看结果")
+	tests := []struct {
+		event string
+		want  string
+	}{
+		{"run_completed", "任务已完成，请查看结果"},
+		{"run_failed", "任务运行失败，请查看对话"},
+		{"run_interrupted", "运行已被中断"},
+		{"subagent_completed", "子代理任务已完成"},
+	}
+	for _, tt := range tests {
+		if got := DefaultBody(tt.event); got != tt.want {
+			t.Fatalf("DefaultBody(%q) = %q, want %q", tt.event, got, tt.want)
+		}
+	}
+}
+
+func TestFormatTitleNewEvents(t *testing.T) {
+	tests := []struct {
+		agent string
+		event string
+		want  string
+	}{
+		{"codex", "run_interrupted", "Codex 运行中断"},
+		{"claude_code", "subagent_completed", "Claude Code 子代理完成"},
+		{"omo", "subagent_completed", "Oh My OpenCode 子代理完成"},
+	}
+	for _, tt := range tests {
+		if got := FormatTitle(tt.agent, tt.event); got != tt.want {
+			t.Fatalf("FormatTitle(%q, %q) = %q, want %q", tt.agent, tt.event, got, tt.want)
+		}
 	}
 }

@@ -22,7 +22,7 @@ func ParseMessage(r io.Reader) (notify.Message, error) {
 		return notify.Message{}, err
 	}
 	switch strings.TrimSpace(p.Event) {
-	case "permission_required", "input_required", "run_completed", "run_failed":
+	case "permission_required", "input_required", "run_completed", "run_failed", "run_interrupted", "subagent_completed":
 		if p.Body == "" {
 			p.Body = notify.DefaultBody(p.Event)
 		}

@@ -18,7 +18,7 @@ func TestBuildHookSettings_RegistersManagedEvents(t *testing.T) {
 		t.Fatalf("hooks type = %T, want map[string]any", got["hooks"])
 	}
 
-	for _, event := range []string{"PermissionRequest", "Stop"} {
+	for _, event := range []string{"PermissionRequest", "Stop", "Interrupt", "SubagentStop"} {
 		items, ok := hooks[event].([]map[string]any)
 		if !ok || len(items) != 1 {
 			t.Fatalf("%s entries missing or invalid: %v", event, hooks[event])
