@@ -66,13 +66,17 @@ agent-notify test wechat-work --agent claude
 
 | Agent（`--agent`） | 默认用户级接入位置 | 支持事件 |
 | --- | --- | --- |
-| Claude Code（`claude`） | `~/.claude/settings.json` | 授权、输入、完成、失败、子代理完成 |
+| Claude Code（`claude`） | `~/.claude/settings.json` | 授权、输入、完成、失败、子代理完成、工具失败 |
 | Codex（`codex`） | `~/.codex/hooks.json`，并在 `config.toml` 中启用 hooks | 授权、完成、运行中断、子代理完成 |
 | OMO / Senpi（`omo`） | 若 `~/.omo/agent` 存在，写入其 `extensions/agent-notify.ts`；否则使用 `~/.senpi/agent/extensions/agent-notify.ts` | 授权、输入、完成、失败、运行中断、子代理完成 |
 
-「运行中断」与「子代理完成」默认不订阅：升级与全新安装都不会自动开启，需在向导或 `--events` 中显式勾选。Hook 订阅是安装时的快照——升级二进制后需对相应 Agent 重跑 `install` 才会写入新事件订阅。
+「运行中断」「子代理完成」与「工具失败」默认不订阅：升级与全新安装都不会自动开启，需在向导或 `--events` 中显式勾选。Hook 订阅是安装时的快照——升级二进制后需对相应 Agent 重跑 `install` 才会写入新事件订阅。
 
 OMO 接入使用 Senpi 的 `agent_settled` 和 `herdr:blocked` 扩展接口，不安装旧版 OpenCode 插件。Codex 安装后请重启并运行 `/hooks` 审核、信任变更；OMO 运行 `/reload` 或重启以加载扩展。自定义目录、项目级安装和事件名称见[使用与排错](docs/usage.md)。
+
+## 配合 magpie 使用
+
+使用 [magpie](https://usemagpie.ai) 网关时，可以改用仓库里的 [magpie 插件](magpie-plugin/README.md) 发送通知：渠道和企业微信 Webhook 只在插件里配置一次，WSL 与 Windows 两侧共用，通知里带用时、模型和来源。走网关的 Agent 不装 hook 也能收到「完成 / 失败」通知；「等待授权 / 等待输入」和不走网关的 Agent，在对应一侧运行 `agent-notify install --agent <id> --magpie`，把 hook 事件转发给插件。详见[使用与排错](docs/usage.md)。
 
 ## 日常使用
 

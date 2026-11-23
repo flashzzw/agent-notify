@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/flashzzw/agent-notify/internal/common"
 	"github.com/flashzzw/agent-notify/internal/notify"
 )
 
@@ -38,8 +39,19 @@ func TestParseMessageNewEventsFallBackToDefaultBody(t *testing.T) {
 	}
 }
 func TestRenderDoesNotContainFocusOrShellInterpolation(t *testing.T) {
-	s := string(render("C:/工具/agent-notify.exe", "C:/配置/config.yaml"))
+	s := string(render("C:/工具/agent-notify.exe", common.InstallOptions{ConfigPath: "C:/配置/config.yaml"}))
 	if strings.Contains(s, "anfocus") || strings.Contains(s, "$(") {
 		t.Fatal("unsafe extension")
+	}
+}
+
+func TestParseTurnStartedAndRawReply(t *testing.T) {
+	msg, err := ParseMessage(bytes.NewBufferString(`{"event":"turn_started","session_id":"s","cwd":"/p"}`))
+	if err != nil || msg.Event != "turn_started" || msg.Agent != "omo" || msg.SessionID != "s" {
+		t.Fatalf("turn_started: %+v err=%v", msg, err)
+	}
+	msg, err = ParseMessage(bytes.NewBufferString(`{"event":"run_completed","session_id":"s","cwd":"/p","body":"任务已完成，请查看结果","text":" 改好了 ","model":"glm-5"}`))
+	if err != nil || msg.Detail != "改好了" || msg.Model != "glm-5" || msg.Body != "任务已完成，请查看结果" {
+		t.Fatalf("raw reply: %+v err=%v", msg, err)
 	}
 }

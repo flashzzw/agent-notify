@@ -50,6 +50,9 @@ func (o *OpenCodeIntegration) Install(path, binary string, configPath ...string)
 	}
 	return senpihooks.Install(path, common.ResolveBinaryPath(binary), cfg)
 }
+func (o *OpenCodeIntegration) InstallWithOptions(path, binary string, opts common.InstallOptions) error {
+	return senpihooks.InstallWithOptions(path, common.ResolveBinaryPath(binary), opts)
+}
 func (o *OpenCodeIntegration) Uninstall(path string) error { return senpihooks.Uninstall(path) }
 func (o *OpenCodeIntegration) IsHookInstalled(path string) (bool, error) {
 	return senpihooks.IsInstalled(path)

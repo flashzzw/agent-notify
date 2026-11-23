@@ -1,5 +1,7 @@
 package agentintegrations
 
+import "github.com/flashzzw/agent-notify/internal/common"
+
 // Integration defines the interface for agent-specific integration logic.
 // Each agent (Claude Code, Codex, etc.) implements this interface to provide
 // detection, settings path resolution, and installation capabilities.
@@ -17,6 +19,10 @@ type Integration interface {
 	// Install configures the agent to use agent-notify by modifying its
 	// settings file at settingsPath with the given binaryPath
 	Install(settingsPath, binaryPath string, configPath ...string) error
+
+	// InstallWithOptions is Install with explicit options, such as subscribing
+	// the turn-start event needed when events are forwarded to the magpie plugin.
+	InstallWithOptions(settingsPath, binaryPath string, opts common.InstallOptions) error
 
 	// Uninstall removes only the hook entries written by agent-notify from
 	// the settings file at settingsPath. Other hooks defined by the user are

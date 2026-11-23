@@ -9,7 +9,7 @@ Agent Notify 将编程 Agent 的生命周期事件转换成桌面和企业微信
 _Avoid_: 把 OMO 与旧版 OMP（oh-my-pi）混称。
 
 **Agent event**:
-Agent 发出的等待授权、等待输入、运行完成、运行失败、运行中断或子代理完成事件。运行中断与子代理完成默认不订阅，需显式启用。
+Agent 发出的等待授权、等待输入、运行完成、运行失败、运行中断、子代理完成或工具失败事件。运行中断、子代理完成与工具失败默认不订阅，需显式启用。
 
 **Channel**:
 发送通知的目标。首期包含企业微信机器人和 Windows 系统通知。
@@ -22,3 +22,16 @@ Oh My OpenCode。它运行在 Senpi Extension 体系中，Agent Notify 通过 Se
 
 **WSL**:
 Windows Subsystem for Linux。WSL 中运行的 Agent 使用 Linux 版 Agent Notify，通过 Windows PowerShell 转发 Windows 系统通知。
+
+**magpie 插件**:
+`magpie-plugin/` 下的 magpie 网关插件，通知的中枢：渠道、文案、事件过滤和去重都在它那里，配置只有一份。
+_Avoid_: 把它和 Go 程序的独立模式混称为「两套通知」。
+
+**转发模式**:
+Go 程序把 hook 事件上报给 magpie 插件发送，而不是自己发送。用 `install --magpie` 开启；插件不可达时降级为本机 Windows 通知。
+
+**来源**:
+事件来自哪一侧：`Windows`、`WSL · <发行版名>` 或 `Linux`。显示在通知里，用于分清同一个群或同一块屏幕上的两侧。
+
+**回合**:
+从用户的话到达模型，到模型给出回答且不再调用工具为止。用时按回合计算。

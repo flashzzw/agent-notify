@@ -57,6 +57,11 @@ func (c *ClaudeIntegration) Install(settingsPath, binaryPath string, configPath 
 	return claudehooks.Install(settingsPath, common.ResolveBinaryPath(binaryPath), configPath...)
 }
 
+// InstallWithOptions 同 Install，另可订阅回合开始事件。
+func (c *ClaudeIntegration) InstallWithOptions(settingsPath, binaryPath string, opts common.InstallOptions) error {
+	return claudehooks.InstallWithOptions(settingsPath, common.ResolveBinaryPath(binaryPath), opts)
+}
+
 // Uninstall removes only the hook entries written by agent-notify from
 // Claude Code's settings.json. User-defined hooks are preserved.
 func (c *ClaudeIntegration) Uninstall(settingsPath string) error {

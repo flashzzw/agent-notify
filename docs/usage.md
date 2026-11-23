@@ -22,6 +22,7 @@ Project scope writes `.claude/settings.json`, `.codex/hooks.json` (and `config.t
 | `input_required` | 等待输入 / Input needed | Claude, OMO | 是 / Yes |
 | `run_completed` | 任务完成 / Completed | Claude, Codex, OMO | 是 / Yes |
 | `run_failed` | 运行失败 / Failed | Claude, OMO | 是 / Yes |
+| `tool_failed` | 工具失败 / A tool call failed | Claude | 否 / No |
 | `run_interrupted` | 运行中断 / Interrupted by the user | Codex, OMO | 否 / No |
 | `subagent_completed` | 子代理完成 / Subagent finished | Claude, Codex, OMO | 否 / No |
 
@@ -48,6 +49,28 @@ agent-notify install --agent claude --channels system --events permission_requir
 缺失的项目、工作目录或会话字段会省略；消息总长度限制为 2048 UTF-8 字节，超长正文保留开头并以 `…` 结束。WeCom uses plain text, omits unavailable metadata, and truncates long content without splitting a Unicode character.
 
 Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，顶部来源名称旁显示对应小图标，底部 attribution 行显示项目名（工作目录末段）。正文只有文字：只包含事件消息本身，不放图片，也不再附带工作目录与时间行——Windows 通知自带时间显示。OMO 图标由 `assets/omo-icon-light.svg` 转为 PNG 后内置。各自使用独立的通知身份，可在 Windows「设置 → 系统 → 通知」中分别控制。图标内置于程序，首次使用时写入 `%LOCALAPPDATA%\AgentNotify\icons`；WSL 也写入此 Windows 本地目录，无需保留旧版工具或单独安装图片。
+
+## 通过 magpie 插件发送 / Sending through the magpie plugin
+
+使用 [magpie](https://usemagpie.ai) 时，可以把渠道配置集中到 `magpie-plugin/` 插件里：WSL 与 Windows 两侧共用一份，企业微信 Webhook 只填一次。安装和选项见 [magpie-plugin/README.md](../magpie-plugin/README.md)。
+
+插件装好后，在需要「等待授权 / 等待输入」通知、或 Agent 不走 magpie 网关的每一侧运行：
+
+```bash
+agent-notify install --agent claude --magpie
+agent-notify install --agent codex --magpie
+agent-notify install --agent omo --magpie
+agent-notify test magpie
+agent-notify doctor
+```
+
+`--magpie` 开启转发模式：hook 事件交给插件发送，这一侧不需要 `--channels`，事件过滤、文案、去重都由插件决定。它还会多订阅一个「回合开始」hook（Claude / Codex 的 `UserPromptSubmit`、OMO 的 `agent_start`）用于计算用时，提问内容不会被转发。重装时省略 `--magpie` 沿用原设置；`--magpie=false` 关闭并摘掉回合开始 hook。
+
+WSL 里的 `install --magpie` 会把 `magpie.endpoint_file` 指向 Windows 用户目录下的 `.agent-notify/magpie-endpoint.json`（magpie 通常运行在 Windows 上）；定位不到时按提示在配置里手工填写。插件不可达时，本机 `events` 里订阅的事件降级为本机 Windows 通知，原因写入日志。
+
+转发连的是 `127.0.0.1`：magpie 在 Windows、Agent 在 WSL 时，WSL 需要 mirrored 网络（`%USERPROFILE%\.wslconfig` 的 `[wsl2]` 下 `networkingMode=mirrored`）；默认的 NAT 网络下连不到插件，事件会一直走降级。通知没来时先运行 `agent-notify doctor`，再看 magpie 所在系统的 `~/.agent-notify/magpie-plugin.log`：没发的事件都记着原因，含义见[插件 README 的排错一节](../magpie-plugin/README.md#排错)。同一侧不要把 `--channels` 的独立模式和转发模式混着用，否则同一个回合会各发一条。
+
+With the magpie plugin installed, `install --magpie` forwards hook events to it instead of sending locally; channels, filtering and wording are configured once in the plugin. If the plugin cannot be reached, subscribed events fall back to a local Windows toast. Forwarding targets `127.0.0.1`, so an agent in WSL reaching magpie on Windows needs WSL mirrored networking. The plugin's log (`~/.agent-notify/magpie-plugin.log` on the magpie side) records why an event was not sent.
 
 ## 通知模板 / Notification templates
 

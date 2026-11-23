@@ -132,6 +132,8 @@ func eventEmoji(event string) string {
 		return "🛑"
 	case "subagent_completed":
 		return "🤖"
+	case "tool_failed":
+		return "⚠️"
 	default:
 		return "🔔"
 	}

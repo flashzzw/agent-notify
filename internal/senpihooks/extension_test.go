@@ -4,7 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 func TestExtensionRoutesSettledAndBlockedEvents(t *testing.T) {
@@ -85,5 +88,65 @@ func TestInstallAndUninstallProtectUnrelatedFiles(t *testing.T) {
 	actual, err := os.ReadFile(path)
 	if err != nil || string(actual) != string(original) {
 		t.Fatal("unrelated file changed")
+	}
+}
+
+// 开启回合事件的扩展：主会话每次 agent_start 上报 turn_started，worker 不报；
+// 完成事件带出模型最后回复的纯文本与模型名。
+func TestExtensionReportsTurnStartAndReplyWhenForwarding(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node.js is required to execute the Senpi extension contract")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent-notify.mjs")
+	if err := InstallWithOptions(path, "/bin/agent-notify", common.InstallOptions{TurnEvents: true}); err != nil {
+		t.Fatal(err)
+	}
+	testPath := filepath.Join(dir, "verify.mjs")
+	script := `import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const calls=[];
+const context=vm.createContext({process:{cwd:()=>'/fallback'}});
+const childModule=new vm.SyntheticModule(['spawn'],function(){this.setExport('spawn',(binary,args)=>({
+  on(){}, unref(){}, stdin:{on(){},end(data){calls.push({binary,args:[...args],payload:JSON.parse(data)})}}
+}));},{context});
+const mod=new vm.SourceTextModule(readFileSync(process.argv[2],'utf8'),{context});
+await mod.link(()=>childModule);await mod.evaluate();
+const handlers=new Map(),bus=new Map();
+const pi={cwd:'/项目',sessionKind:'interactive',on:(e,f)=>handlers.set(e,f),events:{on:(e,f)=>bus.set(e,f)}};
+mod.namespace.default(pi);
+const ctx={sessionManager:{getSessionId:()=> 's1'}};
+handlers.get('agent_start')({},ctx);
+assert.equal(calls.length,1);
+assert.equal(calls[0].payload.event,'turn_started');
+assert.equal(calls[0].payload.session_id,'s1');
+handlers.get('agent_end')({messages:[{role:'assistant',stopReason:'stop',model:'glm-5',content:[{type:'thinking',thinking:'x'},{type:'text',text:'改好了'},{type:'toolCall'},{type:'text',text:'共 3 处'}]}]},ctx);
+handlers.get('agent_settled')({},ctx);
+assert.equal(calls.at(-1).payload.event,'run_completed');
+assert.equal(calls.at(-1).payload.text,'改好了\n共 3 处');
+assert.equal(calls.at(-1).payload.model,'glm-5');
+bus.get('herdr:blocked')({active:true,kind:'question',label:'选哪个方案'});
+assert.equal(calls.at(-1).payload.text,'选哪个方案');
+pi.sessionKind='worker';
+const before=calls.length;
+handlers.get('agent_start')({},ctx);
+assert.equal(calls.length,before);
+`
+	if err := os.WriteFile(testPath, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, "--experimental-vm-modules", testPath, path).CombinedOutput(); err != nil {
+		t.Fatalf("extension contract: %v\n%s", err, out)
+	}
+	// 默认安装不上报回合开始。
+	plain := filepath.Join(dir, "plain.mjs")
+	if err := Install(plain, "/bin/agent-notify", ""); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(plain)
+	if !strings.Contains(string(data), "const TURN_EVENTS = false;") {
+		t.Fatal("default extension must not report turn starts")
 	}
 }

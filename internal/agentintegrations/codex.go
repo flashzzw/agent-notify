@@ -56,6 +56,11 @@ func (c *CodexIntegration) Install(settingsPath, binaryPath string, configPath .
 	return codexhooks.Install(settingsPath, common.ResolveBinaryPath(binaryPath), configPath...)
 }
 
+// InstallWithOptions 同 Install，另可订阅回合开始事件。
+func (c *CodexIntegration) InstallWithOptions(settingsPath, binaryPath string, opts common.InstallOptions) error {
+	return codexhooks.InstallWithOptions(settingsPath, common.ResolveBinaryPath(binaryPath), opts)
+}
+
 // Uninstall removes only the hook entries written by agent-notify from
 // Codex's hooks.json. User-defined hooks are preserved. The
 // [features] hooks toggle in config.toml is NOT removed — it is a generic

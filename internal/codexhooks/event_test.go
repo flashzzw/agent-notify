@@ -137,7 +137,7 @@ func TestParseSubagentStop(t *testing.T) {
 }
 
 func TestParseUnsupportedEvent(t *testing.T) {
-	raw := []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s","cwd":"/tmp"}`)
+	raw := []byte(`{"hook_event_name":"PreToolUse","session_id":"s","cwd":"/tmp"}`)
 
 	_, err := parseMessageBytes(raw)
 	if err == nil {
@@ -167,4 +167,31 @@ func TestTruncateMessage(t *testing.T) {
 // 后者现在从 io.Reader 流式解码(见 common.DecodeHookPayload)。
 func parseMessageBytes(data []byte) (notify.Message, error) {
 	return ParseMessage(bytes.NewReader(data))
+}
+
+func TestParseUserPromptSubmitStartsTurnWithoutPromptText(t *testing.T) {
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s9","cwd":"/w","model":"gpt-5","turn_id":"t1","prompt":"机密提问"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Event != "turn_started" || msg.SessionID != "s9" || msg.Model != "gpt-5" {
+		t.Fatalf("unexpected message %+v", msg)
+	}
+	if strings.Contains(msg.Title+msg.Body+msg.Detail, "机密提问") {
+		t.Fatal("prompt text must not leave the hook")
+	}
+}
+
+func TestParseStopCarriesModelAndFullReply(t *testing.T) {
+	long := strings.Repeat("回复", 300)
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"Stop","session_id":"s","cwd":"/w","model":"gpt-5","last_assistant_message":"` + long + `"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Model != "gpt-5" || msg.Detail != long {
+		t.Fatalf("Model=%q Detail runes=%d, want model and untruncated reply", msg.Model, len([]rune(msg.Detail)))
+	}
+	if len([]rune(msg.Body)) > 200 {
+		t.Fatalf("Body should stay truncated for local channels, got %d runes", len([]rune(msg.Body)))
+	}
 }

@@ -66,13 +66,17 @@ The environment variable is read during setup and saved to the local configurati
 
 | Agent (`--agent`) | Default user integration | Events |
 | --- | --- | --- |
-| Claude Code (`claude`) | `~/.claude/settings.json` | permission, input, completed, failed, subagent |
+| Claude Code (`claude`) | `~/.claude/settings.json` | permission, input, completed, failed, subagent, tool failed |
 | Codex (`codex`) | `~/.codex/hooks.json` and the hooks feature in `config.toml` | permission, completed, interrupted, subagent |
 | OMO / Senpi (`omo`) | `~/.omo/agent/extensions/agent-notify.ts` when that agent directory exists; otherwise `~/.senpi/agent/extensions/agent-notify.ts` | permission, input, completed, failed, interrupted, subagent |
 
-The `interrupted` and `subagent` events are opt-in: they stay off for upgrades and fresh installs until selected. Hook subscriptions are a snapshot taken at install time — after upgrading the binary, rerun `install` per agent to subscribe new events.
+The `interrupted`, `subagent` and `tool failed` events are opt-in: they stay off for upgrades and fresh installs until selected. Hook subscriptions are a snapshot taken at install time — after upgrading the binary, rerun `install` per agent to subscribe new events.
 
 This OMO integration targets the Senpi extension interface (`agent_settled` and `herdr:blocked`). It does not install the older OpenCode plugin. Restart Codex after installation and run `/hooks` to review and trust hook changes. In OMO, run `/reload` or restart to load the extension. See [configuration and troubleshooting](docs/usage.md) for custom directories, project scope and event names.
+
+## With magpie
+
+If you run the [magpie](https://usemagpie.ai) gateway, the [magpie plugin](magpie-plugin/README.md) in this repository can send the notifications instead: channels and the WeCom webhook are configured once in the plugin and shared by WSL and Windows, and notifications carry the turn's duration, model and origin. Agents behind the gateway get completed and failed notifications with no hook at all. For approval and input prompts, and for agents that bypass the gateway, run `agent-notify install --agent <id> --magpie` on that side to forward hook events to the plugin. See [configuration and troubleshooting](docs/usage.md).
 
 ## Daily use
 

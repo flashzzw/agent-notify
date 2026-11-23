@@ -51,6 +51,17 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 			Workspace: p.CWD,
 			Title:     notify.FormatTitle("codex", "permission_required"),
 			Body:      fmt.Sprintf("工具: %s\n操作需要您的授权许可", fallbackToolName(p.ToolName)),
+			Tool:      p.ToolName,
+			Model:     p.Model,
+		}, nil
+	case "UserPromptSubmit":
+		// 回合开始：只在「转发给 magpie 插件」时订阅，供插件计算用时；提问内容不外传。
+		return notify.Message{
+			Agent:     "codex",
+			Event:     "turn_started",
+			SessionID: p.SessionID,
+			Workspace: p.CWD,
+			Model:     p.Model,
 		}, nil
 	case "Stop":
 		body := notify.DefaultBody("run_completed")
@@ -64,6 +75,8 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 			Workspace: p.CWD,
 			Title:     notify.FormatTitle("codex", "run_completed"),
 			Body:      body,
+			Detail:    strings.TrimSpace(p.LastAssistantMessage),
+			Model:     p.Model,
 		}, nil
 	case "Interrupt":
 		// 用户 ESC 中断活跃 turn；统一归入 run_interrupted。
@@ -74,6 +87,7 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 			Workspace: p.CWD,
 			Title:     notify.FormatTitle("codex", "run_interrupted"),
 			Body:      notify.DefaultBody("run_interrupted"),
+			Model:     p.Model,
 		}, nil
 	case "SubagentStop":
 		body := notify.DefaultBody("subagent_completed")
@@ -87,6 +101,8 @@ func ParseMessage(stdin io.Reader) (notify.Message, error) {
 			Workspace: p.CWD,
 			Title:     notify.FormatTitle("codex", "subagent_completed"),
 			Body:      body,
+			Detail:    strings.TrimSpace(p.LastAssistantMessage),
+			Model:     p.Model,
 		}, nil
 	default:
 		return notify.Message{}, fmt.Errorf("unsupported hook event: %s", p.HookEventName)

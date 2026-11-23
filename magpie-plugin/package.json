@@ -1,0 +1,65 @@
+{
+  "name": "agent-notify-magpie",
+  "version": "0.1.0",
+  "description": "Agent Notify 的 magpie 插件：Agent 回合完成、失败、等待授权或等待输入时，发 Windows 系统通知和企业微信纯文本消息；WSL 与 Windows 两侧的 CLI 共用一份配置",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "notify.hooks.mjs",
+    "turn.mjs",
+    "hub.mjs",
+    "service.mjs",
+    "channels.mjs",
+    "toast.mjs",
+    "message.mjs",
+    "options.mjs",
+    "clock.mjs",
+    "icons/*.png",
+    "page/*.html",
+    "page/*.js",
+    "page/*.css",
+    "page/*.svg",
+    "README.md",
+    "LICENSE.magpie-community",
+    "LICENSE.material-icons"
+  ],
+  "keywords": ["magpie", "magpie-gateway", "magpie-hooks", "notification", "wecom", "windows-toast", "claude-code", "codex"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flashzzw/agent-notify.git",
+    "directory": "magpie-plugin"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "engines": {
+    "magpie": ">=0.1.3443",
+    "bun": ">=1.4.2"
+  },
+  "magpie": {
+    "hooks": "./notify.hooks.mjs",
+    "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI0Ij48cGF0aCBkPSJNMTIgMjJjMS4xIDAgMi0uOSAyLTJoLTRjMCAxLjEuODkgMiAyIDJ6bTYtNnYtNWMwLTMuMDctMS42NC01LjY0LTQuNS02LjMyVjRjMC0uODMtLjY3LTEuNS0xLjUtMS41cy0xLjUuNjctMS41IDEuNXYuNjhDNy42MyA1LjM2IDYgNy45MiA2IDExdjVsLTIgMnYxaDE2di0xbC0yLTJ6Ii8+PC9zdmc+",
+    "page": {
+      "title": "Agent Notify",
+      "titles": { "zh": "Agent 通知", "zh-TW": "Agent 通知" },
+      "file": "page/index.html",
+      "icon": "page/icon.svg"
+    },
+    "options": {
+      "enabled": true,
+      "port": 3497,
+      "lang": "zh",
+      "channels": {
+        "toast": { "enabled": true },
+        "wecom": { "enabled": false, "webhook": "" }
+      },
+      "events": ["permission_required", "input_required", "run_completed", "run_failed"],
+      "agents": [],
+      "minSeconds": 0,
+      "includeText": true
+    },
+    "permissions": []
+  }
+}

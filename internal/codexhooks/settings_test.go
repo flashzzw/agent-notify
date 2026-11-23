@@ -346,3 +346,22 @@ func TestUninstallKeepsNonArrayHookValue(t *testing.T) {
 		t.Fatalf("托管 hook 未被移除:\n%s", data)
 	}
 }
+
+// 回合开始事件只在转发给 magpie 插件时订阅；关掉转发后重装要摘掉它。
+func TestInstallWithOptionsSubscribesAndRetiresTurnEvent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hooks.json")
+	if err := InstallWithOptions(path, "/tmp/agent-notify", common.InstallOptions{TurnEvents: true}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), `"UserPromptSubmit"`) || strings.Count(string(data), "handle-codex-hook") != len(managedEvents)+1 {
+		t.Fatalf("turn event not subscribed: %s", data)
+	}
+	if err := InstallWithOptions(path, "/tmp/agent-notify", common.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(path)
+	if strings.Contains(string(data), `"UserPromptSubmit"`) || strings.Count(string(data), "handle-codex-hook") != len(managedEvents) {
+		t.Fatalf("turn event not retired: %s", data)
+	}
+}

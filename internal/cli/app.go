@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/flashzzw/agent-notify/internal/config"
+	"github.com/flashzzw/agent-notify/internal/magpieforward"
 	"github.com/flashzzw/agent-notify/internal/notify"
 	"github.com/flashzzw/agent-notify/internal/senpihooks"
 	"github.com/flashzzw/agent-notify/internal/state"
@@ -198,6 +199,7 @@ type pathFunc func() (string, error)
 func newInstallCmd(s Streams, path pathFunc) *cobra.Command {
 	var agent, scope, settings, binaryPath string
 	var channels, events []string
+	var magpie bool
 	cmd := &cobra.Command{Use: "install", Short: "使用命令参数配置并安装接入", Args: cobra.NoArgs}
 	cmd.Flags().StringVar(&agent, "agent", "claude", "claude、codex、omo")
 	cmd.Flags().StringVar(&scope, "scope", "user", "user 或 project")
@@ -205,6 +207,7 @@ func newInstallCmd(s Streams, path pathFunc) *cobra.Command {
 	cmd.Flags().StringVar(&binaryPath, "binary", "", "持久保存的 agent-notify 程序路径")
 	cmd.Flags().StringSliceVar(&channels, "channels", nil, "system,wechat-work（留空沿用原配置）")
 	cmd.Flags().StringSliceVar(&events, "events", nil, "逗号分隔的通知事件（留空沿用原配置）")
+	cmd.Flags().BoolVar(&magpie, "magpie", false, "把事件转发给 magpie 插件发送（--magpie=false 关闭；省略时沿用原配置）")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		p, err := path()
 		if err != nil {
@@ -239,17 +242,49 @@ func newInstallCmd(s Streams, path pathFunc) *cobra.Command {
 		if !cmd.Flags().Changed("events") {
 			events = n.Events
 		}
-		if !selected.System.Enabled && !selected.WechatWork.Enabled && !cmd.Flags().Changed("channels") {
-			return fmt.Errorf("请选择 --channels system、wechat-work 或运行 init")
+		// 省略 --magpie 时沿用原配置：重装接入不应悄悄关掉转发。
+		forwarding := cfg.Magpie.Enabled
+		setup := app.Setup{Agent: agent, Scope: scope, SettingsPath: settings, BinaryPath: binaryPath, Events: events, Channels: selected}
+		if cmd.Flags().Changed("magpie") {
+			forwarding = magpie
+			setup.Magpie = &magpie
 		}
-		target, err := app.Configure(p, app.Setup{Agent: agent, Scope: scope, SettingsPath: settings, BinaryPath: binaryPath, Events: events, Channels: selected})
+		// 转发模式下渠道由插件管理，本机不必选渠道。
+		if !forwarding && !selected.System.Enabled && !selected.WechatWork.Enabled && !cmd.Flags().Changed("channels") {
+			return fmt.Errorf("请选择 --channels system、wechat-work，使用 --magpie，或运行 init")
+		}
+		if forwarding && cfg.Magpie.EndpointFile == "" {
+			setup.MagpieEndpointFile = windowsEndpointFile(cmd.Context(), s)
+		}
+		target, err := app.Configure(p, setup)
 		if err != nil {
 			return err
 		}
 		printSetupDone(s, agent, target)
+		if forwarding {
+			fmt.Fprintln(s.Stdout, "事件将转发给 magpie 插件；渠道与事件在插件页面配置。可运行 test magpie 验证。")
+		}
 		return nil
 	}
 	return cmd
+}
+
+// locateWindowsEndpointFile 可在测试里替换，避免真的调用 cmd.exe。
+var locateWindowsEndpointFile = magpieforward.WindowsEndpointFile
+
+// windowsEndpointFile 在 WSL 里定位 Windows 侧的端点文件：magpie 通常运行在
+// Windows 上。找不到只提示、不中止安装——插件也可能就运行在 WSL 里，那时
+// 默认位置 ~/.agent-notify 已经够用。
+func windowsEndpointFile(ctx context.Context, s Streams) string {
+	if !notify.IsWSL() {
+		return ""
+	}
+	path, err := locateWindowsEndpointFile(ctx)
+	if err != nil {
+		fmt.Fprintf(s.Stdout, "未能定位 Windows 用户目录（%v）；如 magpie 运行在 Windows 上，请在配置里设置 magpie.endpoint_file。\n", err)
+		return ""
+	}
+	return path
 }
 func printSetupDone(s Streams, agent, path string) {
 	fmt.Fprintf(s.Stdout, "%s 接入已配置: %s\n", config.AgentName(agent), path)
@@ -321,15 +356,37 @@ func newSendCmd(s Streams, path pathFunc) *cobra.Command {
 }
 func newTestCmd(s Streams, path pathFunc) *cobra.Command {
 	var agent string
-	cmd := &cobra.Command{Use: "test <system|wechat-work>", Short: "发送一条测试通知", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "test <system|wechat-work|magpie>", Short: "发送一条测试通知", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		p, err := path()
 		if err != nil {
 			return err
+		}
+		if args[0] == "magpie" {
+			return forwardTest(cmd.Context(), s, p, agent)
 		}
 		return deliver(cmd.Context(), s, p, agent, args[0], "Agent Notify 测试", "配置成功！这是一条测试通知。")
 	}}
 	cmd.Flags().StringVar(&agent, "agent", "claude", "使用该 Agent 的渠道配置")
 	return cmd
+}
+
+// forwardTest 走与 hook 相同的转发路径上报一个 test 事件；是否真的弹出通知
+// 取决于插件里的渠道配置。
+func forwardTest(ctx context.Context, s Streams, path, agent string) error {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return err
+	}
+	if config.NormalizeAgent(agent) == "" {
+		return fmt.Errorf("unsupported agent %q (claude, codex, omo)", agent)
+	}
+	wd, _ := os.Getwd()
+	event := magpieforward.EventFromMessage(notify.Message{Agent: agent, Event: "test", Workspace: wd, Detail: "这是一条经 magpie 插件转发的测试通知。"})
+	if err := magpieforward.Send(ctx, cfg.Magpie, event); err != nil {
+		return err
+	}
+	fmt.Fprintln(s.Stdout, "测试事件已交给 magpie 插件，请在插件配置的渠道确认收到。")
+	return nil
 }
 func newDoctorCmd(s Streams, path pathFunc) *cobra.Command {
 	return &cobra.Command{Use: "doctor", Short: "检查配置、接入和通知环境（不发送消息）", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -392,12 +449,37 @@ func doctor(s Streams, path string) error {
 	} else {
 		fmt.Fprintln(s.Stdout, "Windows 通知: PowerShell 可用；请用 test system 验证桌面显示。")
 	}
+	if problem := magpieStatus(s, cfg.Magpie); problem != "" {
+		problems = append(problems, problem)
+	}
 	fmt.Fprintln(s.Stdout, "Codex 接入变更后需 /hooks 信任；OMO 使用 Senpi Extension 接口。")
 	fmt.Fprintln(s.Stdout, "日志:", filepath.Join(filepath.Dir(path), "agent-notify.log"))
 	if len(problems) > 0 {
 		return fmt.Errorf("诊断发现问题:\n%s", strings.Join(problems, "\n"))
 	}
 	return nil
+}
+
+// magpieStatus 打印转发状态并返回需要用户处理的问题（没有则为空串）。
+// 只读端点文件并探测端口，不上报任何事件。
+func magpieStatus(s Streams, cfg config.MagpieConfig) string {
+	if !cfg.Enabled {
+		fmt.Fprintln(s.Stdout, "magpie 转发: 未开启")
+		return ""
+	}
+	endpoint, err := magpieforward.Resolve(cfg)
+	if err != nil {
+		fmt.Fprintln(s.Stdout, "magpie 转发: 已开启 | 端点文件未找到")
+		return "magpie 转发: " + err.Error()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := magpieforward.Reachable(ctx, endpoint); err != nil {
+		fmt.Fprintf(s.Stdout, "magpie 转发: 已开启 | 端点文件=%s | 端口 %d 无法连接\n", endpoint.File, endpoint.Port)
+		return fmt.Sprintf("magpie 转发: 插件服务端口 %d 无法连接（magpie 未运行或插件未启用）；事件会降级为本机 Windows 通知", endpoint.Port)
+	}
+	fmt.Fprintf(s.Stdout, "magpie 转发: 已开启 | 端点文件=%s | 端口 %d 可连接；请用 test magpie 验证发送。\n", endpoint.File, endpoint.Port)
+	return ""
 }
 func selectedChannels(c config.ChannelsConfig) []string {
 	var result []string

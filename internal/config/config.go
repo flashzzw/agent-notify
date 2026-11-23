@@ -21,6 +21,7 @@ type Config struct {
 	Agent    AgentConfig    `yaml:"agent"`
 	Notify   NotifyConfig   `yaml:"notify"`
 	Behavior BehaviorConfig `yaml:"behavior"`
+	Magpie   MagpieConfig   `yaml:"magpie"`
 	// Legacy fields round-trip without being executable in the first-release runtime.
 	Extra map[string]any `yaml:",inline"`
 }
@@ -66,6 +67,20 @@ type BehaviorConfig struct {
 	TitleTemplate string `yaml:"title_template,omitempty"`
 	BodyTemplate  string `yaml:"body_template,omitempty"`
 }
+
+// MagpieConfig 控制「转发给 magpie 插件」模式。开启后 hook 事件交给插件的
+// 本地服务发送，渠道、事件过滤与文案都由插件决定；本机 channels 只在转发
+// 失败时作为降级使用。口令不在这里：它由插件写进端点文件。
+type MagpieConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Port    int  `yaml:"port"`
+	// EndpointFile 指向插件写出的端点文件；留空时使用 ~/.agent-notify 下的默认位置。
+	// WSL 中它通常是 Windows 用户目录下的那一份。
+	EndpointFile string `yaml:"endpoint_file,omitempty"`
+}
+
+// DefaultMagpiePort 与插件 package.json 里的默认端口一致。
+const DefaultMagpiePort = 3497
 
 func AgentName(agent string) string {
 	switch agent {
@@ -115,7 +130,9 @@ func Events(agent string) []string {
 		return []string{"permission_required", "run_completed", "run_interrupted", "subagent_completed"}
 	case "claude":
 		// Claude Code 无 Interrupt 类 hook 事件，故不提供 run_interrupted。
-		return []string{"permission_required", "input_required", "run_completed", "run_failed", "subagent_completed"}
+		// tool_failed（PostToolUseFailure）每次工具失败都会触发，默认不订阅；
+		// run_failed 只对应 StopFailure（回合因 API 错误终止）。
+		return []string{"permission_required", "input_required", "run_completed", "run_failed", "subagent_completed", "tool_failed"}
 	default:
 		return []string{"permission_required", "input_required", "run_completed", "run_failed", "run_interrupted", "subagent_completed"}
 	}
@@ -131,7 +148,7 @@ func defaultEvents(agent string) []string {
 	}
 }
 func Default() Config {
-	c := Config{Version: currentConfigVersion, Behavior: BehaviorConfig{DedupeSeconds: 10, SendTimeoutSeconds: 10, Locale: "zh-CN"}}
+	c := Config{Version: currentConfigVersion, Behavior: BehaviorConfig{DedupeSeconds: 10, SendTimeoutSeconds: 10, Locale: "zh-CN"}, Magpie: MagpieConfig{Port: DefaultMagpiePort}}
 	for _, id := range Agents {
 		a, n, _ := c.Target(id)
 		a.InstallScope = "user"
@@ -157,8 +174,11 @@ func dataPath(name string) (string, error) {
 	return filepath.Join(home, ".agent-notify", name), nil
 }
 func DefaultPath() (string, error) { return dataPath("config.yaml") }
-func StatePath() (string, error)   { return dataPath("state.json") }
-func LogPath() (string, error)     { return dataPath("agent-notify.log") }
+
+// MagpieEndpointPath 是插件与本程序同在一个系统时端点文件的默认位置。
+func MagpieEndpointPath() (string, error) { return dataPath("magpie-endpoint.json") }
+func StatePath() (string, error)          { return dataPath("state.json") }
+func LogPath() (string, error)            { return dataPath("agent-notify.log") }
 
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
@@ -214,6 +234,9 @@ func (c Config) Validate() error {
 	}
 	if c.Behavior.SendTimeoutSeconds < 1 || c.Behavior.SendTimeoutSeconds > 60 {
 		return fmt.Errorf("send_timeout_seconds 必须在 1–60 之间")
+	}
+	if c.Magpie.Port < 1 || c.Magpie.Port > 65535 {
+		return fmt.Errorf("magpie.port 必须在 1–65535 之间")
 	}
 	if err := ValidateTemplate("title_template", c.Behavior.TitleTemplate, 100, false); err != nil {
 		return err

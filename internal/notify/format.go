@@ -58,6 +58,8 @@ func eventDisplayName(event string) string {
 		return "运行中断"
 	case "subagent_completed":
 		return "子代理完成"
+	case "tool_failed":
+		return "工具失败"
 	default:
 		return event
 	}

@@ -54,9 +54,11 @@ func runMenu(ctx context.Context, s Streams, path string) error {
 			var id, ch string
 			id, err = p.Select("使用哪个 Agent 的配置", agentOptions(), "claude")
 			if err == nil {
-				ch, err = p.Select("测试哪个渠道", []PromptOption{{Label: "Windows 通知", Value: "system"}, {Label: "企业微信", Value: "wechat-work"}}, "system")
+				ch, err = p.Select("测试哪个渠道", []PromptOption{{Label: "Windows 通知", Value: "system"}, {Label: "企业微信", Value: "wechat-work"}, {Label: "magpie 插件转发", Value: "magpie"}}, "system")
 			}
-			if err == nil {
+			if err == nil && ch == "magpie" {
+				err = forwardTest(ctx, s, path, id)
+			} else if err == nil {
 				err = deliver(ctx, s, path, id, ch, "Agent Notify 测试", "这是一条测试通知。")
 			}
 		case "behavior":
@@ -115,6 +117,25 @@ func runSetup(s Streams, path string, p Prompter) error {
 	if err != nil {
 		return err
 	}
+	// 转发模式下渠道与事件都在插件页面配置，向导不再逐项询问；本机已有的
+	// 渠道和事件选择原样保留，供插件不可达时降级使用。
+	forward, err := p.Confirm("通过 magpie 插件发送通知（渠道与事件在插件页面配置）？", cfg.Magpie.Enabled)
+	if err != nil {
+		return err
+	}
+	if forward {
+		setup := app.Setup{Agent: id, Scope: scope, Events: n.Events, Channels: n.Channels, Magpie: &forward}
+		if cfg.Magpie.EndpointFile == "" {
+			setup.MagpieEndpointFile = windowsEndpointFile(context.Background(), s)
+		}
+		target, err := app.Configure(path, setup)
+		if err != nil {
+			return err
+		}
+		printSetupDone(s, id, target)
+		fmt.Fprintln(s.Stdout, "事件将转发给 magpie 插件；可在「测试通知」里选择 magpie 插件转发来验证。")
+		return nil
+	}
 	channels, err := p.MultiSelect("通知渠道（空格选择，回车确认）", []PromptOption{{Label: "Windows 通知（支持 WSL）", Value: "system"}, {Label: "企业微信机器人", Value: "wechat-work"}}, selectedChannels(n.Channels))
 	if err != nil {
 		return err
@@ -147,7 +168,7 @@ func runSetup(s Streams, path string, p Prompter) error {
 			return err
 		}
 	}
-	labels := map[string]string{"permission_required": "等待授权", "input_required": "等待输入", "run_completed": "运行完成", "run_failed": "运行失败", "run_interrupted": "运行中断", "subagent_completed": "子代理完成"}
+	labels := map[string]string{"permission_required": "等待授权", "input_required": "等待输入", "run_completed": "运行完成", "run_failed": "运行失败", "run_interrupted": "运行中断", "subagent_completed": "子代理完成", "tool_failed": "工具失败"}
 	opts := []PromptOption{}
 	for _, event := range config.Events(id) {
 		opts = append(opts, PromptOption{Label: labels[event], Value: event})
@@ -159,7 +180,7 @@ func runSetup(s Streams, path string, p Prompter) error {
 	if len(events) == 0 {
 		return fmt.Errorf("请至少选择一个通知事件")
 	}
-	target, err := app.Configure(path, app.Setup{Agent: id, Scope: scope, Events: events, Channels: selected})
+	target, err := app.Configure(path, app.Setup{Agent: id, Scope: scope, Events: events, Channels: selected, Magpie: &forward})
 	if err != nil {
 		return err
 	}

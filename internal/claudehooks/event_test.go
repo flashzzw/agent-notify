@@ -69,7 +69,7 @@ func TestParseNotificationNeedsInputVariant(t *testing.T) {
 }
 
 // issue #32:tool_response 依工具而异(MCP 返回数组、Bash 类返回字符串),
-// 不能因为不是对象就丢掉整个 run_failed 事件。
+// 不能因为不是对象就丢掉整个事件。单次工具失败归入 tool_failed，不是回合失败。
 func TestParseMessagePostToolUseFailureToleratesNonObjectToolResponse(t *testing.T) {
 	cases := []struct {
 		name string
@@ -83,10 +83,10 @@ func TestParseMessagePostToolUseFailureToleratesNonObjectToolResponse(t *testing
 		t.Run(tc.name, func(t *testing.T) {
 			msg, err := parseMessageBytes([]byte(tc.json))
 			if err != nil {
-				t.Fatalf("ParseMessage() error = %v, want run_failed event", err)
+				t.Fatalf("ParseMessage() error = %v, want tool_failed event", err)
 			}
-			if msg.Event != "run_failed" {
-				t.Fatalf("Event = %q, want run_failed", msg.Event)
+			if msg.Event != "tool_failed" {
+				t.Fatalf("Event = %q, want tool_failed", msg.Event)
 			}
 		})
 	}
@@ -170,5 +170,106 @@ func TestParseSubagentStop(t *testing.T) {
 	}
 	if msg.Event != "subagent_completed" || msg.Body != notify.DefaultBody("subagent_completed") {
 		t.Fatalf("empty message should fall back to default body, got %+v", msg)
+	}
+}
+
+// PostToolUseFailure 的错误文本是顶层 error 字段；工具名与错误要作为原始字段带出。
+func TestParsePostToolUseFailureCarriesToolAndTopLevelError(t *testing.T) {
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"PostToolUseFailure","session_id":"s1","cwd":"/w","tool_name":"Bash","error":"Exit code 1\nError: Cannot find module 'express'","is_interrupt":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Event != "tool_failed" || msg.Tool != "Bash" || !strings.Contains(msg.Detail, "Cannot find module") {
+		t.Fatalf("unexpected message %+v", msg)
+	}
+	if !strings.Contains(msg.Body, "工具: Bash") || !strings.Contains(msg.Body, "Exit code 1") {
+		t.Fatalf("Body = %q, want tool and error", msg.Body)
+	}
+}
+
+func TestParseNotificationByType(t *testing.T) {
+	for _, kind := range []string{"idle_prompt", "agent_needs_input", "elicitation_dialog"} {
+		msg, err := parseMessageBytes([]byte(`{"hook_event_name":"Notification","session_id":"s","cwd":"/w","message":"Claude 正在等你","notification_type":"` + kind + `"}`))
+		if err != nil || msg.Event != "input_required" {
+			t.Fatalf("%s: msg=%+v err=%v, want input_required", kind, msg, err)
+		}
+		if msg.Detail != "Claude 正在等你" {
+			t.Fatalf("%s: Detail = %q, want the notification text", kind, msg.Detail)
+		}
+	}
+	// 等待授权已由 PermissionRequest 覆盖；其余类型与输入无关。即使文案里
+	// 恰好含有旧的匹配短语，也以类型为准。
+	for _, kind := range []string{"permission_prompt", "auth_success", "agent_completed"} {
+		if _, err := parseMessageBytes([]byte(`{"hook_event_name":"Notification","session_id":"s","cwd":"/w","message":"Claude is waiting for your input","notification_type":"` + kind + `"}`)); err == nil {
+			t.Fatalf("%s should not produce a notification", kind)
+		}
+	}
+	// 旧版本没有类型字段：回退到文案匹配。
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"Notification","session_id":"s","cwd":"/w","message":"Claude is waiting for your input"}`))
+	if err != nil || msg.Event != "input_required" {
+		t.Fatalf("legacy payload: msg=%+v err=%v", msg, err)
+	}
+}
+
+func TestParseUserPromptSubmitStartsTurnWithoutPromptText(t *testing.T) {
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s9","cwd":"/w","prompt":"机密提问"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Event != "turn_started" || msg.SessionID != "s9" || msg.Workspace != "/w" {
+		t.Fatalf("unexpected message %+v", msg)
+	}
+	if strings.Contains(msg.Title+msg.Body+msg.Detail, "机密提问") {
+		t.Fatal("prompt text must not leave the hook")
+	}
+}
+
+func TestParseStopKeepsDefaultBodyAndCarriesFullReply(t *testing.T) {
+	long := strings.Repeat("回复", 300)
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"Stop","session_id":"s","cwd":"/w","last_assistant_message":"` + long + `"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Body != notify.DefaultBody("run_completed") {
+		t.Fatalf("Body = %q, want the default body", msg.Body)
+	}
+	if msg.Detail != long {
+		t.Fatalf("Detail has %d runes, want the untruncated reply", len([]rune(msg.Detail)))
+	}
+}
+
+func TestParseStopFailureFallsBackToErrorFields(t *testing.T) {
+	msg, err := parseMessageBytes([]byte(`{"hook_event_name":"StopFailure","session_id":"s","cwd":"/w","error":"rate_limit","error_details":"429 Too Many Requests"}`))
+	if err != nil || msg.Event != "run_failed" || msg.Detail != "429 Too Many Requests" {
+		t.Fatalf("msg=%+v err=%v", msg, err)
+	}
+}
+
+// testdata/hooks/claude-2.1.322 是从真实 claude 2.1.322（`claude -p`，项目级 hook）
+// 录下的载荷，只替换了会话 id 与本机路径。
+func TestParseRecordedClaude2_1_322Payloads(t *testing.T) {
+	read := func(name string) notify.Message {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "hooks", "claude-2.1.322", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg, err := parseMessageBytes(data)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return msg
+	}
+	started := read("user_prompt_submit.json")
+	if started.Event != "turn_started" || started.SessionID == "" || started.Workspace != "/home/user/demo-project" {
+		t.Fatalf("turn start = %+v", started)
+	}
+	// 提问内容只用于让 Claude 开始回合，不进通知也不外传。
+	if strings.Contains(started.Detail+started.Body+started.Title, "Reply with exactly") {
+		t.Fatalf("the prompt must not travel with the turn start: %+v", started)
+	}
+	failed := read("stop_failure_not_logged_in.json")
+	if failed.Event != "run_failed" || failed.Detail != "Not logged in · Please run /login" {
+		t.Fatalf("stop failure = %+v", failed)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -172,5 +173,54 @@ func TestTemplateValidationRoundTripAndRejection(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
 		t.Fatal("invalid config overwrote file")
+	}
+}
+
+func TestMagpieForwardingDefaultsAndValidation(t *testing.T) {
+	cfg := Default()
+	if cfg.Magpie.Enabled || cfg.Magpie.Port != DefaultMagpiePort {
+		t.Fatalf("defaults = %+v, want disabled on port %d", cfg.Magpie, DefaultMagpiePort)
+	}
+	// 旧配置没有 magpie 段，或只写了 enabled：端口继承默认值。
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("version: 3\nmagpie:\n  enabled: true\n  endpoint_file: /mnt/c/Users/u/.agent-notify/magpie-endpoint.json\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Magpie.Enabled || loaded.Magpie.Port != DefaultMagpiePort {
+		t.Fatalf("loaded = %+v", loaded.Magpie)
+	}
+	redacted, err := loaded.Redacted()
+	if err != nil || !strings.Contains(string(redacted), "magpie-endpoint.json") {
+		t.Fatalf("endpoint_file should stay visible in diagnostics: %s err=%v", redacted, err)
+	}
+	for _, port := range []int{0, 65536} {
+		bad := Default()
+		bad.Magpie.Port = port
+		if err := bad.Validate(); err == nil {
+			t.Fatalf("port %d should be rejected", port)
+		}
+	}
+}
+
+func TestToolFailedIsOptInForClaudeOnly(t *testing.T) {
+	if !slices.Contains(Events("claude"), "tool_failed") {
+		t.Fatal("claude should offer tool_failed")
+	}
+	cfg := Default()
+	_, claude, _ := cfg.Target("claude")
+	if slices.Contains(claude.Events, "tool_failed") {
+		t.Fatal("tool_failed must not be subscribed by default")
+	}
+	for _, id := range Agents {
+		if slices.Contains(Events(id), "turn_started") {
+			t.Fatalf("%s: turn_started is internal and must not be selectable", id)
+		}
+	}
+	if slices.Contains(Events("codex"), "tool_failed") {
+		t.Fatal("codex has no tool failure hook")
 	}
 }

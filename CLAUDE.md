@@ -6,6 +6,7 @@
 
 ```bash
 make test
+bun test magpie-plugin
 make build
 make package VERSION=v0.1.0
 go test ./internal/notify -run TestName
@@ -19,9 +20,12 @@ go vet ./...
 - `internal/app`：安装、启用、卸载 Agent 接入的生命周期。
 - `internal/claudehooks`、`internal/codexhooks`、`internal/senpihooks`：读取 hook / Senpi 扩展事件并转换为统一通知消息。
 - `internal/agenthooks`：按 Agent 配置选择发送器、去重、超时和日志；通知模板（`behavior.title_template` / `body_template`）在 Dispatch 层渲染。
-- `internal/notify`：企业微信 HTTP Sender 与 Windows/WSL PowerShell Toast Sender（品牌圆形 logo、attribution 项目名）。
+- `internal/notify`：企业微信 HTTP Sender 与 Windows/WSL PowerShell Toast Sender（按 Agent 区分的通知身份与小图标、attribution 项目名；正文只有文字）。
+- `internal/magpieforward`：转发模式——找到 magpie 插件的端点文件并上报事件。
 - `internal/state`：发送去重、冻结和日志文件。
 - `internal/common`：配置文件原子写入、hook 事件大小限制和命令路径处理。
+
+`magpie-plugin/` 是 magpie 网关插件（Bun，`bun test magpie-plugin`），通知的中枢：网关钩子判断回合完成与失败，本地服务接收 Go 程序转发的 hook 事件，两者在 `hub.mjs` 汇合后发送。开启转发（`install --magpie`）时，Go 端不再按本机 `events` 过滤，文案与渠道由插件决定；取舍见 `docs/adr/0003-magpie-plugin-as-notification-hub.md`。改上报协议时两端同步修改。
 
 OMO 使用新版 Senpi Extension。用户级扩展位于 `~/.omo/agent/extensions` 或 `~/.senpi/agent/extensions`，项目级位于 `.senpi/extensions`。不要把新版 OMO 当作旧版 OpenCode 插件或 OMP。
 

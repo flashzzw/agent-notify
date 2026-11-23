@@ -23,6 +23,10 @@ var managedEvents = []string{
 }
 
 // BuildHookSettings 生成 Codex hooks.json 所需的 settings 结构。
+// turnEvent 只在「转发给 magpie 插件」时订阅：它标记回合开始，让插件能算出
+// 回合用时。未开启转发时每次提问白起一个进程，所以安装时会主动摘掉它。
+const turnEvent = "UserPromptSubmit"
+
 func BuildHookSettings(binaryPath string) map[string]any {
 	binaryPath = common.ResolveBinaryPath(binaryPath)
 	command := buildHookCommand(binaryPath)
@@ -50,13 +54,22 @@ func BuildHookSettings(binaryPath string) map[string]any {
 // Install 以增量方式写入 hooks.json：已存在 agent-notify 的 hook 则跳过，
 // 不覆盖用户自己挂载的其他 hook。同时确保 config.toml 中 [features] hooks = true。
 func Install(path string, binaryPath string, configPath ...string) error {
+	opts := common.InstallOptions{}
+	if len(configPath) > 0 {
+		opts.ConfigPath = configPath[0]
+	}
+	return InstallWithOptions(path, binaryPath, opts)
+}
+
+// InstallWithOptions 与 Install 相同，另按 opts.TurnEvents 订阅或摘掉回合开始事件。
+func InstallWithOptions(path string, binaryPath string, opts common.InstallOptions) error {
 	settings, err := common.ReadOrderedSettings(path)
 	if err != nil {
 		return err
 	}
 
 	binaryPath = common.ResolveBinaryPath(binaryPath)
-	command := buildHookCommand(binaryPath) + common.ConfigArgument(configPath)
+	command := buildHookCommand(binaryPath) + common.ConfigArgument([]string{opts.ConfigPath})
 
 	hooks, err := common.ChildObject(settings, "hooks")
 	if err != nil {
@@ -65,7 +78,13 @@ func Install(path string, binaryPath string, configPath ...string) error {
 	if err := common.RemoveManagedEvent(&hooks, "SessionStart", hookCommandMarker); err != nil {
 		return err
 	}
-	if err := common.InstallManagedHooks(&hooks, managedEvents, hookCommandMarker, command,
+	events := managedEvents
+	if opts.TurnEvents {
+		events = append(append([]string(nil), managedEvents...), turnEvent)
+	} else if err := common.RemoveManagedEvent(&hooks, turnEvent, hookCommandMarker); err != nil {
+		return err
+	}
+	if err := common.InstallManagedHooks(&hooks, events, hookCommandMarker, command,
 		common.RefuseNonArrayEvent("hooks")); err != nil {
 		return err
 	}

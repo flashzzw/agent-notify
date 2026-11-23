@@ -30,6 +30,10 @@ type Setup struct {
 	BinaryPath   string
 	Events       []string
 	Channels     config.ChannelsConfig
+	// Magpie 为 nil 时沿用现有的转发开关；非 nil 时显式开启或关闭。
+	Magpie *bool
+	// MagpieEndpointFile 非空时写入 magpie.endpoint_file（WSL 下指向 Windows 侧）。
+	MagpieEndpointFile string
 }
 
 func Configure(configPath string, req Setup) (string, error) {
@@ -68,12 +72,20 @@ func Configure(configPath string, req Setup) (string, error) {
 	a.InstalledPaths = config.RecordInstalledPath(a.InstalledPaths, path)
 	n.Events = req.Events
 	n.Channels = req.Channels
+	if req.Magpie != nil {
+		cfg.Magpie.Enabled = *req.Magpie
+	}
+	if req.MagpieEndpointFile != "" {
+		cfg.Magpie.EndpointFile = req.MagpieEndpointFile
+	}
 	// Record the intended path before installing, so a partial failure remains discoverable/uninstallable.
 	a.Enabled = false
 	if err := config.Save(configPath, cfg); err != nil {
 		return "", err
 	}
-	if err := integration.Install(path, binaryPath, configPath); err != nil {
+	// 回合开始事件只有转发给 magpie 插件时才有人消费；关掉转发后重装会摘掉它。
+	opts := common.InstallOptions{ConfigPath: configPath, TurnEvents: cfg.Magpie.Enabled}
+	if err := integration.InstallWithOptions(path, binaryPath, opts); err != nil {
 		return "", fmt.Errorf("安装未完成（已记录路径，可重试或卸载）: %w", err)
 	}
 	a.Enabled = true
