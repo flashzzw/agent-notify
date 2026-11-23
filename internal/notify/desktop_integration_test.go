@@ -78,12 +78,8 @@ $registration = Get-ItemProperty -LiteralPath $key
 if ($registration.DisplayName -ne '` + wantName + `') { throw 'Incorrect notification display name' }
 if (-not $registration.IconUri -or -not (Test-Path -LiteralPath $registration.IconUri)) { throw 'Notification icon missing' }
 if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($registration.IconUri)) -ne $request.Icon) { throw 'Cached icon differs from embedded artwork' }
-# The placeholder src must be substituted with a real file:/// URI before LoadXml.
-$img = $xml.SelectSingleNode('/toast/visual/binding/image[@placement="appLogoOverride"]')
-if ($null -eq $img) { throw 'Notification is missing the circular agent logo' }
-if ($img.GetAttribute('hint-crop') -ne 'circle') { throw 'Agent logo is not circular' }
-if (-not $img.GetAttribute('src').StartsWith('file:///')) { throw 'Agent logo src was not resolved to a file URI' }
-if (-not [IO.File]::Exists([Uri]::new($img.GetAttribute('src')).LocalPath)) { throw 'Agent logo file URI does not point to the cached icon' }
+# The toast body is text only; the icon above belongs to the notification identity.
+if ($null -ne $xml.SelectSingleNode('//image')) { throw 'Notification carries an image, want text only' }
 `
 		}
 		args[len(args)-1] = encodeTestPowerShell(script)

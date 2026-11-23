@@ -13,7 +13,7 @@ This edition supports **Claude Code, Codex, and Senpi-based Oh My OpenCode (OMO)
 
 WeCom notifications use plain text for compatibility with WeChat. Messages include a title, body, timestamp and available project, workspace and session details. Long content is truncated at UTF-8 character boundaries to keep the entire message within 2048 bytes.
 
-Windows notification headers have distinct names and small icons: `Codex Notify`, `Claude Notify`, and `OMO Notify`. Each toast shows the agent's circular brand logo on the left and the project name in an attribution line; the body carries only the event message. Icons are embedded in the executable and cached on Windows at first use, including when sending from WSL, with no downloads required. Titles and bodies can be customized with `behavior.title_template` / `body_template` placeholders such as `{agentName}` and `{event}` — see [usage](docs/usage.md).
+Windows notification headers have distinct names and small icons: `Codex Notify`, `Claude Notify`, and `OMO Notify`. Each toast shows the project name in an attribution line; the body is text only, with no image, and carries just the event message. Icons are embedded in the executable and cached on Windows at first use, including when sending from WSL, with no downloads required. Titles and bodies can be customized with `behavior.title_template` / `body_template` placeholders such as `{agentName}` and `{event}` — see [usage](docs/usage.md).
 
 ## Install
 

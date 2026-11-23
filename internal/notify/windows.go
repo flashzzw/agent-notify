@@ -18,12 +18,6 @@ import (
 // XML-escaped Base64 payloads never become executable code.
 type WindowsSender struct{ run Runner }
 
-// logoSrcPlaceholder 是 Toast XML image src 的占位串。Go/WSL 侧不知道
-// 图标在 Windows 文件系统中的真实路径（由 PowerShell 侧解析），脚本会在
-// LoadXml 前把它替换为 file:/// URI。URI 形态保证 XML 属性安全，且与
-// 用户文本碰撞概率趋零。
-const logoSrcPlaceholder = "urn:agent-notify:logo"
-
 func NewWindowsSender(run Runner) *WindowsSender {
 	if run == nil {
 		run = DefaultRunner
@@ -37,14 +31,10 @@ func (s *WindowsSender) Send(ctx context.Context, msg Message) error {
 		return err
 	}
 	identity := identityForAgent(msg.Agent)
+	// 正文只有文字：Agent 的图标只作为通知身份的小图标（注册表 IconUri）
+	// 显示在顶部来源名旁，不在正文前再放一张大图。
 	var payload bytes.Buffer
-	payload.WriteString(`<toast duration="long"><visual><binding template="ToastGeneric">`)
-	if len(identity.Icon) > 0 {
-		payload.WriteString(`<image placement="appLogoOverride" hint-crop="circle" src="`)
-		payload.WriteString(logoSrcPlaceholder)
-		payload.WriteString(`"/>`)
-	}
-	payload.WriteString(`<text>`)
+	payload.WriteString(`<toast duration="long"><visual><binding template="ToastGeneric"><text>`)
 	_ = xml.EscapeText(&payload, []byte(common.TruncateRunes(msg.Title, 120)))
 	payload.WriteString(`</text><text>`)
 	_ = xml.EscapeText(&payload, []byte(common.TruncateRunes(msg.Body, 1200)))
@@ -115,15 +105,7 @@ if ($iconPath) {
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-$xmlText = $request.XML
-if ($iconPath) {
-    # [Uri] produces a correctly percent-encoded file:/// URI for CJK, spaces, # and %.
-    # '&' survives URI escaping (legal in a URI path) but is illegal in raw XML, so
-    # escape it before splicing the URI into the attribute value.
-    $iconUri = ([Uri]::new($iconPath)).AbsoluteUri.Replace('&', '&amp;')
-    $xmlText = $xmlText.Replace('urn:agent-notify:logo', $iconUri)
-}
-$xml.LoadXml($xmlText)
+$xml.LoadXml($request.XML)
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 $toast.ExpirationTime = [DateTimeOffset]::Now.AddMinutes(5)
 $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appID)

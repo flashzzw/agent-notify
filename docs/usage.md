@@ -47,7 +47,7 @@ agent-notify install --agent claude --channels system --events permission_requir
 
 缺失的项目、工作目录或会话字段会省略；消息总长度限制为 2048 UTF-8 字节，超长正文保留开头并以 `…` 结束。WeCom uses plain text, omits unavailable metadata, and truncates long content without splitting a Unicode character.
 
-Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，顶部来源名称旁显示对应小图标，正文左侧显示该 Agent 的圆形品牌大 logo，底部 attribution 行显示项目名（工作目录末段）。正文只包含事件消息本身，不再附带工作目录与时间行——Windows 通知自带时间显示。OMO 图标由 `assets/omo-icon-light.svg` 转为 PNG 后内置。各自使用独立的通知身份，可在 Windows「设置 → 系统 → 通知」中分别控制。图标内置于程序，首次使用时写入 `%LOCALAPPDATA%\AgentNotify\icons`；WSL 也写入此 Windows 本地目录，无需保留旧版工具或单独安装图片。
+Windows 通知来源分别为 `Codex Notify`、`Claude Notify`、`OMO Notify`，顶部来源名称旁显示对应小图标，底部 attribution 行显示项目名（工作目录末段）。正文只有文字：只包含事件消息本身，不放图片，也不再附带工作目录与时间行——Windows 通知自带时间显示。OMO 图标由 `assets/omo-icon-light.svg` 转为 PNG 后内置。各自使用独立的通知身份，可在 Windows「设置 → 系统 → 通知」中分别控制。图标内置于程序，首次使用时写入 `%LOCALAPPDATA%\AgentNotify\icons`；WSL 也写入此 Windows 本地目录，无需保留旧版工具或单独安装图片。
 
 ## 通知模板 / Notification templates
 

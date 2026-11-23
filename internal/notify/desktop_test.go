@@ -45,12 +45,7 @@ func TestDesktopNotificationEncodesUntrustedTextWithoutClickAction(t *testing.T)
 		t.Fatal("missing encoded toast delivery")
 	}
 	var toast struct {
-		Texts  []string `xml:"visual>binding>text"`
-		Images []struct {
-			Placement string `xml:"placement,attr"`
-			HintCrop  string `xml:"hint-crop,attr"`
-			Src       string `xml:"src,attr"`
-		} `xml:"visual>binding>image"`
+		Texts []string `xml:"visual>binding>text"`
 	}
 	if err := xml.Unmarshal([]byte(request.XML), &toast); err != nil {
 		t.Fatal(err)
@@ -58,11 +53,16 @@ func TestDesktopNotificationEncodesUntrustedTextWithoutClickAction(t *testing.T)
 	if len(toast.Texts) != 2 || toast.Texts[0] != "测试" || toast.Texts[1] != body {
 		t.Fatalf("notification text did not survive encoding: %v", toast.Texts)
 	}
-	// The agent logo rides in the toast as a branded circle image; its real
-	// file:/// URI is substituted by the PowerShell side before LoadXml.
-	if len(toast.Images) != 1 || toast.Images[0].Placement != "appLogoOverride" ||
-		toast.Images[0].HintCrop != "circle" || toast.Images[0].Src != logoSrcPlaceholder {
-		t.Fatalf("notification image = %+v, want one circular appLogoOverride with placeholder src", toast.Images)
+	assertToastHasNoImage(t, request.XML)
+}
+
+// The toast body is text only: the agent is identified by the small icon Windows
+// draws beside the source name, not by a logo placed in front of the text.
+// User text is XML-escaped, so a literal "<image" can only be an element.
+func assertToastHasNoImage(t *testing.T, toastXML string) {
+	t.Helper()
+	if strings.Contains(toastXML, "<image") {
+		t.Fatalf("notification carries an image, want text only: %s", toastXML)
 	}
 }
 
@@ -167,28 +167,9 @@ func TestDesktopNotificationUsesAgentIdentityAndEmbeddedLogo(t *testing.T) {
 				if request.AppID != tc.appID || request.DisplayName != tc.name {
 					t.Fatalf("identity = %q / %q, want %q / %q", request.AppID, request.DisplayName, tc.appID, tc.name)
 				}
-				var toast struct {
-					Images []struct {
-						Placement string `xml:"placement,attr"`
-						HintCrop  string `xml:"hint-crop,attr"`
-						Src       string `xml:"src,attr"`
-					} `xml:"visual>binding>image"`
-				}
-				if err := xml.Unmarshal([]byte(request.XML), &toast); err != nil {
-					t.Fatal(err)
-				}
-				wantImages := 1
-				if tc.appID == "AgentNotify.Desktop" {
-					wantImages = 0
-				}
-				if len(toast.Images) != wantImages {
-					t.Fatalf("notification image count = %d, want %d", len(toast.Images), wantImages)
-				}
-				for _, img := range toast.Images {
-					if img.Placement != "appLogoOverride" || img.HintCrop != "circle" || img.Src != logoSrcPlaceholder {
-						t.Fatalf("notification image = %+v, want circular branded logo", img)
-					}
-				}
+				// The logo travels in the request for the notification identity
+				// (the small header icon); the toast itself shows none.
+				assertToastHasNoImage(t, request.XML)
 				if tc.appID == "AgentNotify.Desktop" {
 					if len(request.Icon) != 0 || request.IconFile != "" {
 						t.Fatal("unknown agent inherited a different agent's logo")

@@ -13,7 +13,7 @@
 
 企业微信通知使用纯文本，兼容微信端显示；内容包含标题、正文、时间及可用的项目、工作目录和会话信息。超长内容按 UTF-8 字节安全截断，整条消息不超过 2048 字节。
 
-Windows 通知顶部按 Agent 显示独立名称与小图标：`Codex Notify`、`Claude Notify`、`OMO Notify`，正文左侧显示该 Agent 的圆形品牌大 logo，底部 attribution 行显示项目名。正文只包含事件消息本身，不再附带时间行。图标内置于程序，首次通知时缓存到 Windows 本地目录，Windows 原生和 WSL 均可离线使用。标题与正文可通过 `behavior.title_template` / `body_template` 占位符（如 `{agentName}`、`{event}`）自定义，详见[使用与排错](docs/usage.md)。
+Windows 通知顶部按 Agent 显示独立名称与小图标：`Codex Notify`、`Claude Notify`、`OMO Notify`，底部 attribution 行显示项目名。正文只有文字：只包含事件消息本身，不放图片，也不再附带时间行。图标内置于程序，首次通知时缓存到 Windows 本地目录，Windows 原生和 WSL 均可离线使用。标题与正文可通过 `behavior.title_template` / `body_template` 占位符（如 `{agentName}`、`{event}`）自定义，详见[使用与排错](docs/usage.md)。
 
 ## 下载安装
 
