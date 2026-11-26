@@ -29,7 +29,9 @@ func IsWSL() bool {
 	data, _ := os.ReadFile("/proc/sys/kernel/osrelease")
 	return strings.Contains(strings.ToLower(string(data)), "microsoft")
 }
-func powershellPath() string {
+
+// PowerShellPath locates Windows PowerShell on native Windows and WSL.
+func PowerShellPath() string {
 	if p, err := exec.LookPath("powershell.exe"); err == nil {
 		return p
 	}
@@ -47,7 +49,7 @@ func SystemStatus() error {
 	if runtime.GOOS != "windows" && !IsWSL() {
 		return fmt.Errorf("系统通知仅支持 Windows 10/11 或 WSL")
 	}
-	if _, err := exec.LookPath(powershellPath()); err != nil {
+	if _, err := exec.LookPath(PowerShellPath()); err != nil {
 		return fmt.Errorf("未找到 powershell.exe；WSL 请启用 Windows 互操作和 Windows PATH")
 	}
 	return nil

@@ -68,9 +68,9 @@ agent-notify doctor
 
 WSL 里的 `install --magpie` 会把 `magpie.endpoint_file` 指向 Windows 用户目录下的 `.agent-notify/magpie-endpoint.json`（magpie 通常运行在 Windows 上）；定位不到时按提示在配置里手工填写。插件不可达时，本机 `events` 里订阅的事件降级为本机 Windows 通知，原因写入日志。
 
-转发连的是 `127.0.0.1`：magpie 在 Windows、Agent 在 WSL 时，WSL 需要 mirrored 网络（`%USERPROFILE%\.wslconfig` 的 `[wsl2]` 下 `networkingMode=mirrored`）；默认的 NAT 网络下连不到插件，事件会一直走降级。通知没来时先运行 `agent-notify doctor`，再看 magpie 所在系统的 `~/.agent-notify/magpie-plugin.log`：没发的事件都记着原因，含义见[插件 README 的排错一节](../magpie-plugin/README.md#排错)。同一侧不要把 `--channels` 的独立模式和转发模式混着用，否则同一个回合会各发一条。
+magpie 在 Windows、Agent 在 WSL 时，Agent Notify 通过 Windows 互操作访问 Windows 侧的 `127.0.0.1`，支持默认 NAT 和 mirrored 网络。它会先核对监听进程与端点文件记录的 PID。曾手工启用 `agent-notify-magpie-relay.socket` 的用户可在 WSL 用 `systemctl --user disable --now agent-notify-magpie-relay.socket` 停用旧转发器，释放插件的端口。通知没来时先运行 `agent-notify doctor`，再查 magpie 所在系统的 `~/.agent-notify/magpie-plugin.log`，含义见[插件 README 的排错一节](../magpie-plugin/README.md#排错)。同一侧不要把 `--channels` 的独立模式和转发模式混着用，否则同一个回合会各发一条。
 
-With the magpie plugin installed, `install --magpie` forwards hook events to it instead of sending locally; channels, filtering and wording are configured once in the plugin. If the plugin cannot be reached, subscribed events fall back to a local Windows toast. Forwarding targets `127.0.0.1`, so an agent in WSL reaching magpie on Windows needs WSL mirrored networking. The plugin's log (`~/.agent-notify/magpie-plugin.log` on the magpie side) records why an event was not sent.
+With the magpie plugin installed, `install --magpie` forwards hook events to it. The plugin configures channels, filtering and wording. If the plugin cannot be reached, subscribed events fall back to a local Windows toast. A WSL agent reaches magpie on Windows through Windows interop in both NAT and mirrored network modes. The client checks that the endpoint's recorded PID owns the Windows loopback listener before connecting. If you previously installed `agent-notify-magpie-relay.socket` manually, disable it in WSL with `systemctl --user disable --now agent-notify-magpie-relay.socket` to free the port. The plugin's log (`~/.agent-notify/magpie-plugin.log` on the magpie side) records why an event was not sent.
 
 ## 通知模板 / Notification templates
 

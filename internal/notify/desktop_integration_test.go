@@ -53,7 +53,7 @@ Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath('LocalApplicat
 `
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_ = exec.CommandContext(ctx, powershellPath(), "-NoProfile", "-NonInteractive", "-EncodedCommand", encodeTestPowerShell(script)).Run()
+		_ = exec.CommandContext(ctx, PowerShellPath(), "-NoProfile", "-NonInteractive", "-EncodedCommand", encodeTestPowerShell(script)).Run()
 	})
 
 	sender := NewWindowsSender(func(ctx context.Context, name string, input io.Reader, args ...string) error {

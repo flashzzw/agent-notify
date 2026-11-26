@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/flashzzw/agent-notify/internal/config"
@@ -148,6 +150,54 @@ func TestSendErrorsNeverContainToken(t *testing.T) {
 	}
 	if err := Reachable(context.Background(), Endpoint{Port: plugin.port(t)}); err != nil {
 		t.Fatalf("Reachable: %v", err)
+	}
+}
+
+func TestWSLWindowsEndpointDoesNotDialLinuxLoopback(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("exercises WSL interop from Linux")
+	}
+	testutil.IsolateHome(t)
+	t.Setenv("WSL_DISTRO_NAME", "TestDistro")
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for name, script := range map[string]string{
+		"wslpath":        "#!/bin/sh\n[ \"$1\" = -w ] || exit 1\nprintf '%s\\n' 'C:\\Users\\test\\magpie-endpoint.json'\n",
+		"powershell.exe": "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' no-listener\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var localCalls atomic.Int32
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		localCalls.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(local.Close)
+	_, portText, err := net.SplitHostPort(local.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "magpie-endpoint.json")
+	writeEndpoint(t, file, port, testToken)
+	cfg := config.MagpieConfig{Enabled: true, EndpointFile: file}
+	if err := Send(context.Background(), cfg, Event{V: 1, Agent: "codex", Event: "turn_started"}); err == nil || !strings.Contains(err.Error(), "未由端点文件中的插件进程监听") {
+		t.Errorf("Send = %v, want a Windows listener mismatch", err)
+	}
+	endpoint, err := Resolve(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Reachable(context.Background(), endpoint); err == nil || !strings.Contains(err.Error(), "未由端点文件中的插件进程监听") {
+		t.Errorf("Reachable = %v, want a Windows listener mismatch", err)
+	}
+	if got := localCalls.Load(); got != 0 {
+		t.Errorf("Linux loopback received %d request(s) for the Windows endpoint", got)
 	}
 }
 

@@ -476,7 +476,7 @@ func magpieStatus(s Streams, cfg config.MagpieConfig) string {
 	defer cancel()
 	if err := magpieforward.Reachable(ctx, endpoint); err != nil {
 		fmt.Fprintf(s.Stdout, "magpie 转发: 已开启 | 端点文件=%s | 端口 %d 无法连接\n", endpoint.File, endpoint.Port)
-		return fmt.Sprintf("magpie 转发: 插件服务端口 %d 无法连接（magpie 未运行或插件未启用）；事件会降级为本机 Windows 通知", endpoint.Port)
+		return fmt.Sprintf("magpie 转发: %v；订阅的事件会降级为本机 Windows 通知", err)
 	}
 	fmt.Fprintf(s.Stdout, "magpie 转发: 已开启 | 端点文件=%s | 端口 %d 可连接；请用 test magpie 验证发送。\n", endpoint.File, endpoint.Port)
 	return ""

@@ -29,7 +29,7 @@
 
 - 插件的回合状态只在内存：magpie 重启时进行中的回合不通知。谁有 hook 也只记在内存里，宿主重启后要等下一次上报才重新知道，这段时间靠决策 4 的最后一条兜底。两个宿主并存时（被换下的宿主最多再活 10 分钟）各记各的，同一个回合可能发两条；把状态落盘可以解决，目前没有做。
 - 网关钩子拿不到状态码和中止标记：没装 hook 的 Agent 按 Esc 和上游失败分不开，只能靠 `failureHoldSeconds` 压一段时间。
-- hook 上报连的是 `127.0.0.1`：magpie 在 Windows、Agent 在 WSL 时要求 WSL 用 mirrored 网络，NAT 网络下只能降级为本机通知。
+- hook 上报连的是插件所在系统的 `127.0.0.1`。WSL 中的 hook 通过 Windows 互操作上报到 Windows 上的插件，并在连接前核对 Windows 监听进程与端点文件记录的 PID，避免把 WSL 自己的转发端口误作插件。
 - 插件不直接读 Agent 的 hook；每一侧仍要运行一次 `install --magpie`。
 - 服务处理上报时自己读 magpie 的 `plugins.json` 取最新选项：选项变更后宿主要到下一个网关请求才重启，只靠 hook 上报的 Agent 等不到。这依赖 `plugins.json` 的 `{plugins:[{spec, options}]}` 形态，读不到时退回宿主启动时给的选项。
 - 终端里的 `magpie` 命令各自启动插件宿主，会短暂占用上报端口；应用里的宿主按 2 / 5 / 15 秒重试接回。

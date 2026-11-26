@@ -56,6 +56,7 @@ type Endpoint struct {
 	File  string
 	Port  int
 	Token string
+	pid   int
 }
 
 // EventFromMessage 把解析器产出的消息转成上报事件。
@@ -106,6 +107,7 @@ func Resolve(cfg config.MagpieConfig) (Endpoint, error) {
 		var file struct {
 			Port  int    `json:"port"`
 			Token string `json:"token"`
+			PID   int    `json:"pid"`
 		}
 		if json.Unmarshal(data, &file) != nil || strings.TrimSpace(file.Token) == "" {
 			continue
@@ -117,7 +119,7 @@ func Resolve(cfg config.MagpieConfig) (Endpoint, error) {
 		if port < 1 || port > 65535 {
 			port = config.DefaultMagpiePort
 		}
-		return Endpoint{File: path, Port: port, Token: strings.TrimSpace(file.Token)}, nil
+		return Endpoint{File: path, Port: port, Token: strings.TrimSpace(file.Token), pid: file.PID}, nil
 	}
 	return Endpoint{}, ErrNoEndpoint
 }
@@ -134,30 +136,61 @@ func Send(ctx context.Context, cfg config.MagpieConfig, ev Event) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
+	status, err := endpoint.send(ctx, body)
+	if err != nil {
+		return err
+	}
+	switch {
+	case status >= 200 && status < 300:
+		return nil
+	case status == http.StatusUnauthorized:
+		return fmt.Errorf("magpie: 插件拒绝了口令（端点文件可能已过期: %s）", endpoint.File)
+	default:
+		return fmt.Errorf("magpie: 插件服务返回状态 %d", status)
+	}
+}
+
+func (endpoint Endpoint) send(ctx context.Context, body []byte) (int, error) {
+	viaWindows, err := endpoint.viaWindows(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if viaWindows {
+		return endpoint.requestWindows(ctx, body)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.url("/event"), bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("magpie: invalid endpoint")
+		return 0, fmt.Errorf("magpie: invalid endpoint")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(tokenHeader, endpoint.Token)
 	resp, err := localClient.Do(req)
 	if err != nil {
 		// 传输层错误只含本机地址；口令在请求头里，不会出现在这里。
-		return fmt.Errorf("magpie: 无法连接插件服务 127.0.0.1:%d: %w", endpoint.Port, err)
+		return 0, fmt.Errorf("magpie: 无法连接插件服务 127.0.0.1:%d: %w", endpoint.Port, err)
 	}
 	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return nil
-	case resp.StatusCode == http.StatusUnauthorized:
-		return fmt.Errorf("magpie: 插件拒绝了口令（端点文件可能已过期: %s）", endpoint.File)
-	default:
-		return fmt.Errorf("magpie: 插件服务返回状态 %d", resp.StatusCode)
-	}
+	return resp.StatusCode, nil
 }
 
-// Reachable 只做 TCP 连接探测，不发送任何事件；供 doctor 使用。
+// Reachable 探测插件是否可达，不发送任何事件；供 doctor 使用。
 func Reachable(ctx context.Context, endpoint Endpoint) error {
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	viaWindows, err := endpoint.viaWindows(ctx)
+	if err != nil {
+		return err
+	}
+	if viaWindows {
+		status, err := endpoint.requestWindows(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("magpie: 插件健康检查返回状态 %d", status)
+		}
+		return nil
+	}
 	dialer := net.Dialer{Timeout: sendTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(endpoint.Port)))
 	if err != nil {

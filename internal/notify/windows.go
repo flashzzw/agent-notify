@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/flashzzw/agent-notify/internal/common"
 	"strings"
 	"time"
-	"unicode/utf16"
+
+	"github.com/flashzzw/agent-notify/internal/common"
 )
 
 // WindowsSender uses Windows PowerShell on native Windows and WSL.
@@ -55,14 +54,9 @@ func (s *WindowsSender) Send(ctx context.Context, msg Message) error {
 	// Keep images and message text off the Windows command line (32K limit).
 	// Base64 on stdin also avoids PowerShell console code-page conversions.
 	input := strings.NewReader(base64.StdEncoding.EncodeToString(request))
-	units := utf16.Encode([]rune(toastScript))
-	encoded := make([]byte, len(units)*2)
-	for i, u := range units {
-		binary.LittleEndian.PutUint16(encoded[2*i:], u)
-	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := s.run(ctx, powershellPath(), input, "-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", base64.StdEncoding.EncodeToString(encoded)); err != nil {
+	if err := s.run(ctx, PowerShellPath(), input, "-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", common.EncodePowerShell(toastScript)); err != nil {
 		return fmt.Errorf("Windows 通知发送失败，请运行 doctor 检查 PowerShell 与 WSL 互操作: %w", err)
 	}
 	return nil
