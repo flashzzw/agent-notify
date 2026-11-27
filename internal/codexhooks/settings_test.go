@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,6 +13,10 @@ import (
 
 func TestBuildHookSettings_RegistersManagedEvents(t *testing.T) {
 	got := BuildHookSettings("/tmp/agent-notify")
+	wantCommand := `"/tmp/agent-notify" handle-codex-hook`
+	if runtime.GOOS == "windows" {
+		wantCommand = `& '/tmp/agent-notify' handle-codex-hook`
+	}
 
 	hooks, ok := got["hooks"].(map[string]any)
 	if !ok {
@@ -27,8 +32,8 @@ func TestBuildHookSettings_RegistersManagedEvents(t *testing.T) {
 		if !ok || len(entryHooks) != 1 {
 			t.Fatalf("%s command list missing or invalid", event)
 		}
-		if entryHooks[0]["command"] != `"/tmp/agent-notify" handle-codex-hook` && entryHooks[0]["command"] != `/tmp/agent-notify handle-codex-hook` {
-			t.Fatalf("%s command = %v, want quoted or unquoted /tmp/agent-notify handle-codex-hook", event, entryHooks[0]["command"])
+		if entryHooks[0]["command"] != wantCommand {
+			t.Fatalf("%s command = %v, want %q", event, entryHooks[0]["command"], wantCommand)
 		}
 		if entryHooks[0]["type"] != "command" {
 			t.Fatalf("%s type = %v, want command", event, entryHooks[0]["type"])
@@ -40,6 +45,38 @@ func TestBuildHookSettings_RegistersManagedEvents(t *testing.T) {
 	for _, unmanaged := range []string{"Notification", "PostToolUseFailure", "UserPromptSubmit", "PreToolUse", "PostToolUse"} {
 		if _, exists := hooks[unmanaged]; exists {
 			t.Fatalf("hooks should not contain %s for Codex", unmanaged)
+		}
+	}
+}
+
+func TestInstallWithOptions_UpdatesWindowsHookCommands(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires Windows hook command generation")
+	}
+	path := filepath.Join(t.TempDir(), "hooks.json")
+	existing := `{"hooks":{"Stop":[{"hooks":[
+		{"type":"command","command":"echo user-stop"},
+		{"type":"command","command":"\"C:/old/agent-notify.exe\" handle-codex-hook"}
+	]}]}}`
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	options := common.InstallOptions{ConfigPath: "C:\\O’Brien $Team`DEV\\config.yaml", TurnEvents: true}
+	if err := InstallWithOptions(path, `C:\O'Brien $Team\agent-notify.exe`, options); err != nil {
+		t.Fatal(err)
+	}
+	hooks := readSettingsForTest(t, path)["hooks"].(map[string]any)
+	wantCommand := "& 'C:/O''Brien $Team/agent-notify.exe' handle-codex-hook --config 'C:\\O’’Brien $Team`DEV\\config.yaml'"
+	for _, event := range []string{"PermissionRequest", "Stop", "Interrupt", "SubagentStop", "UserPromptSubmit"} {
+		commands := collectCommandsForTest(hooks[event].([]any))
+		if event == "Stop" {
+			if len(commands) == 0 || commands[0] != "echo user-stop" {
+				t.Fatalf("user hook changed: %q", commands)
+			}
+			commands = commands[1:]
+		}
+		if len(commands) != 1 || commands[0] != wantCommand {
+			t.Errorf("%s commands = %q, want only %q", event, commands, wantCommand)
 		}
 	}
 }

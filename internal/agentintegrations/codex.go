@@ -50,8 +50,7 @@ func (c *CodexIntegration) SettingsPath(scope string) (string, error) {
 	}
 }
 
-// Install 写入 Codex hooks.json，订阅 PermissionRequest 与 Stop 事件。
-// 已存在 agent-notify hook 的事件会被跳过；用户挂载的其他 hook 原样保留。
+// Install 更新 Codex hooks.json 中由 agent-notify 管理的 hook。
 func (c *CodexIntegration) Install(settingsPath, binaryPath string, configPath ...string) error {
 	return codexhooks.Install(settingsPath, common.ResolveBinaryPath(binaryPath), configPath...)
 }

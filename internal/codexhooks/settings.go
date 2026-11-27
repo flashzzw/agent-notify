@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/flashzzw/agent-notify/internal/common"
 )
@@ -29,7 +31,7 @@ const turnEvent = "UserPromptSubmit"
 
 func BuildHookSettings(binaryPath string) map[string]any {
 	binaryPath = common.ResolveBinaryPath(binaryPath)
-	command := buildHookCommand(binaryPath)
+	command := buildHookCommand(binaryPath, "")
 
 	buildEntry := func() []map[string]any {
 		return []map[string]any{
@@ -51,7 +53,7 @@ func BuildHookSettings(binaryPath string) map[string]any {
 	return map[string]any{"hooks": hooks}
 }
 
-// Install 以增量方式写入 hooks.json：已存在 agent-notify 的 hook 则跳过，
+// Install 以增量方式写入 hooks.json：已存在的 agent-notify hook 会更新命令，
 // 不覆盖用户自己挂载的其他 hook。同时确保 config.toml 中 [features] hooks = true。
 func Install(path string, binaryPath string, configPath ...string) error {
 	opts := common.InstallOptions{}
@@ -69,7 +71,7 @@ func InstallWithOptions(path string, binaryPath string, opts common.InstallOptio
 	}
 
 	binaryPath = common.ResolveBinaryPath(binaryPath)
-	command := buildHookCommand(binaryPath) + common.ConfigArgument([]string{opts.ConfigPath})
+	command := buildHookCommand(binaryPath, opts.ConfigPath)
 
 	hooks, err := common.ChildObject(settings, "hooks")
 	if err != nil {
@@ -103,11 +105,24 @@ func InstallWithOptions(path string, binaryPath string, opts common.InstallOptio
 	return EnableHooksFeature(configTomlPath)
 }
 
-// buildHookCommand 为 Codex 构造 command 字段。
-// Windows 平台 Codex 对 JSON 字符串中的双引号和反斜杠解析较严格,
-// 因此使用裸路径;其它平台保留 shell 引号转义。
-func buildHookCommand(binaryPath string) string {
-	return common.QuotePathForShell(binaryPath) + " " + hookCommandMarker
+func buildHookCommand(binaryPath, configPath string) string {
+	quotePath := common.QuotePathForShell
+	prefix := ""
+	if runtime.GOOS == "windows" {
+		quotePath = quotePowerShellPath
+		prefix = "& "
+	}
+	command := prefix + quotePath(binaryPath) + " " + hookCommandMarker
+	if configPath != "" {
+		command += " --config " + quotePath(configPath)
+	}
+	return command
+}
+
+var powerShellSingleQuotes = strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛")
+
+func quotePowerShellPath(path string) string {
+	return "'" + powerShellSingleQuotes.Replace(path) + "'"
 }
 
 // IsInstalled 检查 hooks.json 中是否已挂载 agent-notify 的 hook。
